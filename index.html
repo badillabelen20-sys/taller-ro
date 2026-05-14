@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Oficial - Taller de Turbos y Lubricentro</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <!-- Pantalla de Login (Se muestra por defecto) -->
+    <div id="login-screen" class="login-overlay">
+        <div class="login-card">
+            <div class="login-logo">💧💨</div>
+            <h2>Acceso al Taller</h2>
+            <p>Ingresa tus credenciales para continuar</p>
+            <form id="login-form">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="login-email" placeholder="tu@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Contraseña</label>
+                    <input type="password" id="login-password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-add" style="width: 100%; margin-top: 1rem; background-color: #1f2937;">Entrar al Sistema</button>
+            </form>
+            <p id="login-error" class="error-text hidden">Credenciales incorrectas. Intenta de nuevo.</p>
+        </div>
+    </div>
+    <header class="header">
+        <div class="logo">
+            <span class="logo-icon">💧💨</span>
+            <h1>Taller & Lubricentro</h1>
+        </div>
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="turbos">Turbos</button>
+            <button class="tab-btn" data-tab="lubricentro">Lubricentro</button>
+            <button class="tab-btn" data-tab="ventas-turbos">Libro Turbos</button>
+            <button class="tab-btn" data-tab="ventas-lubricentro">Libro Lubricentro</button>
+            <button class="tab-btn" data-tab="presupuesto">📋 Presupuesto</button>
+            <button id="sync-btn" class="btn btn-sell" style="background: #10b981; margin-left: 10px;" onclick="syncWithCloud(true)">🔄 Sincronizar Nube</button>
+            <button id="logout-btn" class="btn-logout" title="Cerrar Sesión">❌</button>
+        </nav>
+    </header>
+
+    <main class="container">
+        <!-- Panel de Punto de Venta Rápido -->
+        <section class="pos-panel">
+            <h2>Punto de Venta Rápido</h2>
+            <div class="pos-controls">
+                <input type="text" id="pos-search" placeholder="Buscar producto para vender (ej. Filtro, T001)..." autocomplete="off">
+                <div id="pos-suggestions" class="suggestions-box hidden"></div>
+                <button id="pos-sell-btn" class="btn btn-sell" disabled>Vender 1 Unidad</button>
+            </div>
+            <p id="pos-selected-info" class="selected-info">Ningún producto seleccionado</p>
+        </section>
+
+        <!-- Tab Turbos -->
+        <section id="turbos" class="tab-content active">
+            <div class="tab-header">
+                <h2>Inventario de Turbos</h2>
+                <div>
+                    <label class="btn btn-outline" style="cursor:pointer; margin-right: 10px;">
+                        📥 Importar Excel
+                        <input type="file" id="import-turbos" accept=".xlsx, .xls" style="display:none;">
+                    </label>
+                    <button class="btn btn-add" onclick="openAddModal('turbos')">+ Nuevo Turbo</button>
+                </div>
+            </div>
+            <input type="text" class="search-bar" id="search-turbos" placeholder="Buscar por código, modelo o vehículo...">
+            
+            <div class="table-container">
+                <table id="table-turbos">
+                    <thead>
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Código</th>
+                            <th>Modelo</th>
+                            <th>Vehículo</th>
+                            <th>Precio</th>
+                            <th>Stock</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Filas de turbos generadas por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Tab Lubricentro -->
+        <section id="lubricentro" class="tab-content">
+            <div class="tab-header">
+                <h2>Inventario de Lubricentro</h2>
+                <div>
+                    <label class="btn btn-outline" style="cursor:pointer; margin-right: 10px;">
+                        📥 Importar Excel
+                        <input type="file" id="import-lubricentro" accept=".xlsx, .xls" style="display:none;">
+                    </label>
+                    <button class="btn btn-add" onclick="openAddModal('lubricentro')">+ Nuevo Producto</button>
+                </div>
+            </div>
+            <input type="text" class="search-bar" id="search-lubricentro" placeholder="Buscar por código o nombre...">
+            
+            <div class="table-container">
+                <table id="table-lubricentro">
+                    <thead>
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Código</th>
+                            <th>Artículo</th>
+                            <th>Precio</th>
+                            <th>Stock</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Filas de lubricentro generadas por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Tab Libro Turbos -->
+        <section id="ventas-turbos" class="tab-content">
+            <div class="tab-header">
+                <h2>Libro Diario: Turbos</h2>
+                <div class="sales-summary">
+                    <span style="font-size: 1.1rem; color: var(--primary-red);">Total Turbos: <strong id="total-sales-turbos">$0.00</strong></span>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="table-ventas-turbos">
+                    <thead>
+                        <tr>
+                            <th>Fecha y Hora</th>
+                            <th>Producto</th>
+                            <th>Precio</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Filas de ventas generadas por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Tab Libro Lubricentro -->
+        <section id="ventas-lubricentro" class="tab-content">
+            <div class="tab-header">
+                <h2>Libro Diario: Lubricentro</h2>
+                <div class="sales-summary">
+                    <span style="font-size: 1.1rem; color: var(--primary-red);">Total Lubricentro: <strong id="total-sales-lubricentro">$0.00</strong></span>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="table-ventas-lubricentro">
+                    <thead>
+                        <tr>
+                            <th>Fecha y Hora</th>
+                            <th>Producto</th>
+                            <th>Precio</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Filas de ventas generadas por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        </section>
+
+        <!-- Tab Presupuesto -->
+        <section id="presupuesto" class="tab-content">
+            <div class="tab-header">
+                <h2>📋 Presupuesto Inteligente</h2>
+                <div id="wega-status" class="status-badge">Cargando Lista WEGA...</div>
+            </div>
+            <div class="budget-layout">
+                <div class="budget-panel search-side">
+                    <div class="form-group">
+                        <label>1. Buscar Vehículo</label>
+                        <input type="text" id="budget-search" placeholder="Ej: Fiat Argo 1.3, Hilux 2.8...">
+                        <button class="btn btn-add" id="btn-search-budget" style="width:100%; margin-top:10px;">🔍 Buscar en Catálogo</button>
+                    </div>
+                    
+                    <div id="wega-results-container" class="results-explorer hidden">
+                        <h4>Resultados WEGA (Click para seleccionar)</h4>
+                        <div id="wega-options" class="options-grid"></div>
+                    </div>
+                </div>
+
+                <div class="budget-panel config-side">
+                    <h4>2. Configuración del Servicio</h4>
+                    <div id="current-config" class="config-card">
+                        <div class="config-item" data-type="oil"><span>🛢️ Aceite:</span> <strong id="sel-oil">-</strong></div>
+                        <div class="config-item" data-type="air"><span>🌬️ Aire:</span> <strong id="sel-air">-</strong></div>
+                        <div class="config-item" data-type="fuel"><span>⛽ Combustible:</span> <strong id="sel-fuel">-</strong></div>
+                        <div class="config-item" data-type="cabin"><span>🏠 Habitáculo:</span> <strong id="sel-cabin">-</strong></div>
+                    </div>
+                    
+                    <div class="form-row" style="margin-top:15px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Mano de Obra ($)</label>
+                            <input type="number" id="budget-labor" value="0">
+                        </div>
+                    </div>
+
+                    <div id="budget-result" class="calc-result hidden">
+                        <div id="budget-items" class="result-details"></div>
+                        <hr>
+                        <div id="budget-total"></div>
+                        <div class="budget-actions">
+                            <button class="btn btn-save" id="btn-save-vehicle" style="width:100%; margin-bottom:10px;">💾 Guardar este Auto</button>
+                            <button class="btn btn-sell" id="btn-whatsapp" style="width:100%; background:#25D366; color:white; border:none;">📱 WhatsApp</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal Nuevo Vehículo -->
+    <div id="vehicle-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="v-modal-title">Registrar Nuevo Auto</h2>
+            <div class="form-group">
+                <label>Nombre del Auto (Ej: Fiat Mobi 1.0)</label>
+                <input type="text" id="v-name" placeholder="Marca y Modelo">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Aceite (Ej: 5W30)</label>
+                    <input type="text" id="v-oil-type">
+                </div>
+                <div class="form-group">
+                    <label>Litros</label>
+                    <input type="number" id="v-oil-liters" step="0.1">
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div class="form-group"><label>Cód. Filtro Aceite</label><input type="text" id="v-f-oil"></div>
+                <div class="form-group"><label>Cód. Filtro Aire</label><input type="text" id="v-f-air"></div>
+                <div class="form-group"><label>Cód. Filtro Nafta</label><input type="text" id="v-f-fuel"></div>
+                <div class="form-group"><label>Cód. Filtro Polen</label><input type="text" id="v-f-cabin"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeVehicleModal()">Cancelar</button>
+                <button class="btn btn-add" onclick="saveNewVehicle()">Guardar en Lista</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para agregar producto -->
+    <div id="add-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="modal-title">Agregar Producto</h2>
+            <form id="add-form">
+                <input type="hidden" id="modal-category">
+                <div class="form-group" id="group-type">
+                    <label>Tipo</label>
+                    <input type="text" id="input-type" placeholder="Ej: Nuevo, Reparado...">
+                </div>
+                <div class="form-group">
+                    <label>Código</label>
+                    <input type="text" id="input-code" placeholder="Ej: T001" required>
+                </div>
+                <div class="form-group">
+                    <label>Nombre / Modelo</label>
+                    <input type="text" id="input-name" required>
+                </div>
+                <div class="form-group" id="group-vehicle">
+                    <label>Vehículo (Solo Turbos)</label>
+                    <input type="text" id="input-vehicle">
+                </div>
+                <div class="form-group">
+                    <label>Precio ($)</label>
+                    <input type="number" id="input-price" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Stock Inicial</label>
+                    <input type="number" id="input-stock" value="1" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-cancel" onclick="closeAddModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-save">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
