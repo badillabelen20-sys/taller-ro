@@ -82,7 +82,16 @@ async function syncWithCloud(manual = false) {
         if (all.length > 0) {
             for (let i = 0; i < all.length; i += 500) await client.from('datos_taller_ro').insert(all.slice(i, i + 500));
         }
-        if (sales.length > 0) await client.from('ventas_taller_ro').upsert(sales.map(s => ({ item_id: s.id, name: s.name, category: s.category, price: s.price, date: s.date })));
+        if (sales.length > 0) {
+            const syncSales = sales.map(s => ({ 
+                item_id: s.item_id || s.id, 
+                name: s.name, 
+                category: s.category, 
+                price: s.price, 
+                date: s.date 
+            }));
+            await client.from('ventas_taller_ro').upsert(syncSales);
+        }
         if (manual) alert("✅ Nube sincronizada");
     } catch (e) { console.error(e); }
 }
@@ -133,7 +142,8 @@ function renderSales() {
     sales.sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(s => {
         const tr = document.createElement('tr');
         const d = new Date(s.date).toLocaleString('es-AR', { dateStyle:'short', timeStyle:'short' });
-        tr.innerHTML = `<td>${d}</td><td><strong>${s.name}</strong></td><td>$${s.price.toFixed(2)}</td><td><button style="color:red; border:none; background:none; cursor:pointer;" onclick="deleteSale('${s.id}', '${s.date}')">Anular</button></td>`;
+        const currentId = s.item_id || s.id;
+        tr.innerHTML = `<td>${d}</td><td><strong>${s.name}</strong></td><td>$${s.price.toFixed(2)}</td><td><button style="color:red; border:none; background:none; cursor:pointer;" onclick="deleteSale('${currentId}', '${s.date}')">Anular</button></td>`;
         if (s.category === 'turbos') { totT += s.price; tT.appendChild(tr); }
         else { totL += s.price; tL.appendChild(tr); }
     });
@@ -234,18 +244,28 @@ function setupPOS() {
 
 async function completeSale(cat, index, price, method) {
     const item = inventory[cat][index]; if (item.stock <= 0) return alert("Sin stock");
-    item.stock--; sales.push({ id: item.id, name: item.name, category: cat, price, date: new Date().toISOString() });
+    item.stock--; sales.push({ id: item.id, item_id: item.id, name: item.name, category: cat, price, date: new Date().toISOString() });
     await saveData(); renderAll(); document.getElementById('pos-selected-info').innerHTML = '<div class="status-badge">✅ Vendido</div>';
 }
 
 async function deleteSale(id, date) {
-    if (!confirm("Anular?")) return;
-    const idx = sales.findIndex(s => s.id === id && s.date === date);
+    if (!confirm("¿Seguro que deseas anular esta venta? El stock volverá a sumarse.")) return;
+    const idx = sales.findIndex(s => (s.id === id || s.item_id === id) && s.date === date);
     if (idx > -1) {
-        const s = sales[idx]; const item = inventory[s.category].find(i => i.id === s.id);
-        if (item) item.stock++;
-        if (client) await client.from('ventas_taller_ro').delete().eq('item_id', id).eq('date', date);
-        sales.splice(idx, 1); await saveData(); renderAll();
+        const s = sales[idx];
+        const actualId = s.id || s.item_id;
+        const item = inventory[s.category].find(i => i.id === actualId);
+        if (item) {
+            item.stock++;
+        }
+        if (client) {
+            await client.from('ventas_taller_ro').delete().eq('item_id', actualId).eq('date', date);
+        }
+        sales.splice(idx, 1);
+        await saveData();
+        renderAll();
+    } else {
+        alert("No se pudo encontrar la venta para anular.");
     }
 }
 
@@ -303,7 +323,6 @@ function processWegaData(data) {
     const wb = XLSX.read(data);
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
     
-    // Buscar la fila donde empiezan los datos (evitar encabezados múltiples)
     let startIndex = 0;
     for(let i=0; i<raw.length; i++) {
         if (raw[i][1] && raw[i][2]) { startIndex = i; break; }
@@ -342,7 +361,6 @@ function updateOilSelect() {
     });
 }
 
-// --- PRESUPUESTO INTERACTIVO ---
 function setupBudget() {
     const btnSearch = document.getElementById('btn-search-budget');
     const btnSave = document.getElementById('btn-save-vehicle');
@@ -353,7 +371,6 @@ function setupBudget() {
         const query = document.getElementById('budget-search').value.toLowerCase().trim();
         if (query.length < 3) return alert("Escriba marca y modelo (ej: Palio 1.4)");
         
-        // Reiniciar selección para nueva búsqueda
         currentSelection = { oil: null, air: null, fuel: null, cabin: null };
         document.querySelectorAll('.config-item strong').forEach(el => el.innerText = '-');
 
@@ -426,8 +443,6 @@ function searchInWega(query) {
                     item.innerHTML = `<strong>${f.code}</strong><small>${f.desc}</small><div style="color:var(--primary); font-weight:bold;">$${(f.price * 1.6).toFixed(0)}</div>`;
                     item.onclick = () => selectFilter(type, f);
                     optionsGrid.appendChild(item);
-                    
-                    // Auto-seleccionar el primero para agilizar
                     if (idx === 0) selectFilter(type, f);
                 });
             }
