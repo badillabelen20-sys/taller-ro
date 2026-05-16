@@ -1,404 +1,276 @@
-// CONFIGURACIÓN SUPABASE REAL DE RO
-const SUPABASE_URL = 'https://bcsmkbtvmabmcuzeehad.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_n6gpg6LRXdKHERrCGMjllw_bKM9vECK';
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Oficial - Taller de Turbos y Lubricentro</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root { --primary: #0f172a; --accent: #0ea5e9; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        body { background-color: var(--bg); color: var(--text); padding-bottom: 50px; }
+        header { background: var(--primary); color: white; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 100; }
+        .logo { font-size: 1.5rem; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        
+        .tabs { display: flex; background: white; padding: 0.5rem; gap: 10px; overflow-x: auto; sticky; top: 60px; z-index: 99; border-bottom: 1px solid #e2e8f0; }
+        .tab-btn { padding: 0.8rem 1.5rem; border: none; background: #f1f5f9; border-radius: 8px; cursor: pointer; font-weight: 600; white-space: nowrap; transition: 0.3s; }
+        .tab-btn.active { background: var(--accent); color: white; }
 
-let client = null;
-let inventory = { turbos: [], lubricentro: [] };
-let sales = [];
-let currentUser = null;
-const DEBIT_PERCENT = 1.06;
-const CREDIT_PERCENT = 1.096;
-let wegaData = [];
-let currentSelection = { oil: null, air: null, fuel: null, cabin: null };
+        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-async function init() {
-    setupTabs();
-    setupSearch();
-    setupModal();
-    setupPOS();
-    setupImport();
-    setupBudget();
-    setupWegaManualImport();
-    loadWegaExcel();
-    loadFromLocal();
-    renderAll();
-    try {
-        if (typeof supabase !== 'undefined') {
-            client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            setupAuth();
-            const { data } = await client.auth.getSession();
-            if (data?.session) {
-                currentUser = data.session.user;
-                document.getElementById('login-screen').classList.add('hidden');
-                await loadFromCloud();
-            }
-        }
-    } catch (e) { console.warn("Init error:", e); }
-}
+        .card { background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 2rem; }
+        h2 { margin-bottom: 1.5rem; font-size: 1.25rem; display: flex; align-items: center; gap: 10px; }
 
-function setupAuth() {
-    const form = document.getElementById('login-form');
-    if (!form) return;
-    form.onsubmit = async (e) => {
-        e.preventDefault();
-        if (!client) return alert("Conectando...");
-        const email = document.getElementById('login-email').value;
-        const password = document.getElementById('login-password').value;
-        try {
-            const { data, error } = await client.auth.signInWithPassword({ email, password });
-            if (error) alert("Error: " + error.message);
-            else { currentUser = data.user; document.getElementById('login-screen').classList.add('hidden'); await loadFromCloud(); }
-        } catch (err) { alert("Error: " + err.message); }
-    };
-    const logout = document.getElementById('logout-btn');
-    if (logout) logout.onclick = async () => { if (client) await client.auth.signOut(); location.reload(); };
-}
+        .search-box { display: flex; gap: 10px; margin-bottom: 1.5rem; }
+        input, select { flex: 1; padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px; outline: none; }
+        button { padding: 0.8rem 1.5rem; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; display: flex; align-items: center; gap: 8px; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-accent { background: var(--accent); color: white; }
+        .btn-success { background: #22c55e; color: white; }
+        button:hover { opacity: 0.9; transform: scale(1.02); }
 
-async function loadFromCloud() {
-    if (!client) return;
-    try {
-        const { data: inv } = await client.from('datos_taller_ro').select('*').limit(10000);
-        const { data: sls } = await client.from('ventas_taller_ro').select('*').limit(10000);
-        if (inv) {
-            inventory.turbos = inv.filter(i => i.category === 'turbos');
-            inventory.lubricentro = inv.filter(i => i.category === 'lubricentro');
-            sales = sls || [];
-            renderAll();
-        }
-    } catch (e) { console.error(e); }
-}
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
+        th, td { padding: 1rem; text-align: left; border-bottom: 1px solid #f1f5f9; }
+        th { background: #f8fafc; color: #64748b; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+        tr:hover { background: #f1f5f9; }
 
-async function syncWithCloud(manual = false) {
-    if (!client || !currentUser) return;
-    try {
-        const all = [...inventory.turbos.map(i=>({...i, category:'turbos'})), ...inventory.lubricentro.map(i=>({...i, category:'lubricentro'}))];
-        await client.from('datos_taller_ro').delete().neq('category', 'vehicle_config');
-        if (all.length > 0) {
-            for (let i = 0; i < all.length; i += 500) await client.from('datos_taller_ro').insert(all.slice(i, i + 500));
-        }
-        if (sales.length > 0) {
-            const syncSales = sales.map(s => ({ item_id: s.item_id || s.id, name: s.name, category: s.category, price: s.price, date: s.date }));
-            await client.from('ventas_taller_ro').upsert(syncSales);
-        }
-        if (manual) alert("✅ Nube sincronizada");
-    } catch (e) { console.error(e); }
-}
+        .stock-low { color: #ef4444; font-weight: 700; }
+        .sync-badge { background: #dcfce7; color: #166534; padding: 4px 12px; border-radius: 99px; font-size: 0.8rem; font-weight: 600; }
 
-async function saveData() {
-    localStorage.setItem('taller_inventory', JSON.stringify(inventory));
-    localStorage.setItem('taller_sales', JSON.stringify(sales));
-    await syncWithCloud();
-}
+        /* Login Screen */
+        #login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+        .login-card { background: white; padding: 2.5rem; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
 
-function loadFromLocal() {
-    const inv = localStorage.getItem('taller_inventory');
-    const sls = localStorage.getItem('taller_sales');
-    if (inv) inventory = JSON.parse(inv);
-    if (sls) sales = JSON.parse(sls);
-}
+        /* POS Card */
+        .pos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
+        .pos-card { border: 2px solid #e2e8f0; border-radius: 12px; padding: 1rem; }
+        .pos-prices { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+        .price-tag { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-radius: 6px; font-weight: 600; }
+        .price-tag.cash { background: #dcfce7; color: #166534; }
+        .price-tag.debit { background: #e0f2fe; color: #0369a1; }
+        .price-tag.credit { background: #fef3c7; color: #92400e; }
 
-function renderAll() { renderTurbos(); renderLubricentro(); renderSales(); updateOilSelect(); }
+        /* Modal */
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1001; }
+        .hidden { display: none !important; }
 
-function renderTurbos(filter = '') {
-    const tbody = document.querySelector('#table-turbos tbody'); if (!tbody) return;
-    tbody.innerHTML = '';
-    inventory.turbos.forEach((item, index) => {
-        if (filter && !item.name.toLowerCase().includes(filter.toLowerCase())) return;
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${item.type || '-'}</td><td><strong>${item.id}</strong></td><td>${item.name}</td><td>${item.vehicle || '-'}</td><td>$${item.price.toFixed(2)}</td><td class="${item.stock <= 2 ? 'stock-low' : ''}">${item.stock}</td><td><button onclick="changeStock('turbos', ${index}, -1)">-</button><button onclick="changeStock('turbos', ${index}, 1)">+</button><button style="background:#3b82f6; color:white; border-radius:4px; border:none; padding:2px 5px; margin-left:5px;" onclick="openEditModal('turbos', ${index})">✏️</button></td>`;
-        tbody.appendChild(tr);
-    });
-}
+        /* Presupuesto */
+        .budget-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .option-item { padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; margin-bottom: 8px; transition: 0.2s; }
+        .option-item:hover { border-color: var(--accent); background: #f0f9ff; }
+        .config-item { background: #f8fafc; padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; }
+        .total-box { background: var(--primary); color: white; padding: 20px; border-radius: 12px; text-align: center; margin-top: 20px; }
+        
+        @media (max-width: 768px) { .budget-grid { grid-template-columns: 1fr; } .search-box { flex-direction: column; } }
+    </style>
+</head>
+<body>
 
-function renderLubricentro(filter = '') {
-    const tbody = document.querySelector('#table-lubricentro tbody'); if (!tbody) return;
-    tbody.innerHTML = '';
-    inventory.lubricentro.forEach((item, index) => {
-        if (filter && !item.name.toLowerCase().includes(filter.toLowerCase())) return;
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${item.type || '-'}</td><td><strong>${item.id}</strong></td><td>${item.name}</td><td>$${item.price.toFixed(2)}</td><td class="${item.stock <= 5 ? 'stock-low' : ''}">${item.stock}</td><td><button onclick="changeStock('lubricentro', ${index}, -1)">-</button><button onclick="changeStock('lubricentro', ${index}, 1)">+</button><button style="background:#3b82f6; color:white; border-radius:4px; border:none; padding:2px 5px; margin-left:5px;" onclick="openEditModal('lubricentro', ${index})">✏️</button></td>`;
-        tbody.appendChild(tr);
-    });
-}
+    <div id="login-screen">
+        <div class="login-card">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">💧💨</div>
+            <h1 style="margin-bottom: 0.5rem;">Acceso al Taller</h1>
+            <p style="color: #64748b; margin-bottom: 2rem;">Ingresa tus credenciales para continuar</p>
+            <form id="login-form">
+                <input type="email" id="login-email" placeholder="Email" required style="margin-bottom: 1rem; width: 100%;">
+                <input type="password" id="login-password" placeholder="Contraseña" required style="margin-bottom: 1.5rem; width: 100%;">
+                <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">Entrar al Sistema</button>
+            </form>
+        </div>
+    </div>
 
-function renderSales() {
-    const tT = document.querySelector('#table-ventas-turbos tbody');
-    const tL = document.querySelector('#table-ventas-lubricentro tbody');
-    if (!tT || !tL) return;
-    tT.innerHTML = ''; tL.innerHTML = '';
-    let totT = 0, totL = 0;
-    const sortedSales = [...sales].sort((a,b) => new Date(b.date) - new Date(a.date));
-    sortedSales.forEach((s) => {
-        const tr = document.createElement('tr');
-        const d = new Date(s.date).toLocaleString('es-AR', { dateStyle:'short', timeStyle:'short' });
-        tr.innerHTML = `<td>${d}</td><td><strong>${s.name}</strong></td><td>$${s.price.toFixed(2)}</td><td><button style="color:red; border:none; background:none; cursor:pointer;" class="btn-anular">Anular</button></td>`;
-        tr.querySelector('.btn-anular').onclick = () => anularVentaFinal(sales.indexOf(s));
-        if (s.category === 'turbos') { totT += s.price; tT.appendChild(tr); }
-        else { totL += s.price; tL.appendChild(tr); }
-    });
-    document.getElementById('total-sales-turbos').innerText = `$${totT.toFixed(2)}`;
-    document.getElementById('total-sales-lubricentro').innerText = `$${totL.toFixed(2)}`;
-}
+    <header>
+        <div class="logo">💧💨 Taller & Lubricentro</div>
+        <div style="display: flex; gap: 15px; align-items: center;">
+            <button class="btn-success" id="sync-cloud-btn" onclick="syncWithCloud(true)">🔍 Sincronizar Nube</button>
+            <button id="logout-btn" style="background: none; color: white; font-size: 1.5rem;">✕</button>
+        </div>
+    </header>
 
-async function anularVentaFinal(index) {
-    const s = sales[index]; if (!s) return;
-    if (!confirm(`¿ANULAR VENTA DE ${s.name}?`)) return;
-    const actualId = s.item_id || s.id;
-    const item = inventory[s.category].find(i => i.id === actualId);
-    if (item) item.stock++;
-    if (client) await client.from('ventas_taller_ro').delete().match({ item_id: actualId, date: s.date });
-    sales.splice(index, 1); await saveData(); renderAll();
-}
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="turbos">Turbos</button>
+        <button class="tab-btn" data-tab="lubricentro">Lubricentro</button>
+        <button class="tab-btn" data-tab="libro-turbos">Libro Turbos</button>
+        <button class="tab-btn" data-tab="libro-lubricentro">Libro Lubricentro</button>
+        <button class="tab-btn" data-tab="presupuesto">📋 Presupuesto</button>
+    </div>
 
-function openEditModal(cat, index) {
-    const item = inventory[cat][index]; editingIndex = index;
-    document.getElementById('modal-category').value = cat;
-    document.getElementById('modal-title').innerText = "Editar Producto";
-    document.getElementById('input-type').value = item.type || '';
-    document.getElementById('input-code').value = item.id;
-    document.getElementById('input-code').disabled = true;
-    document.getElementById('input-name').value = item.name;
-    document.getElementById('input-vehicle').value = item.vehicle || '';
-    document.getElementById('input-price').value = item.price;
-    document.getElementById('input-stock').value = item.stock;
-    document.getElementById('group-vehicle').style.display = cat === 'turbos' ? 'block' : 'none';
-    document.getElementById('add-modal').classList.remove('hidden');
-}
+    <div class="container">
+        <!-- Pestaña Turbos -->
+        <div id="turbos" class="tab-content active">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2>Inventario de Turbos</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <label class="btn-tab" style="background:#f1f5f9; padding: 0.8rem; border-radius: 8px; cursor: pointer;">
+                            📥 Importar Excel
+                            <input type="file" id="import-turbos" hidden accept=".xlsx, .xls">
+                        </label>
+                        <button class="btn-primary" onclick="openAddModal('turbos')">+ Nuevo Turbo</button>
+                    </div>
+                </div>
+                <input type="text" id="search-turbos" placeholder="Buscar por código, modelo o vehículo..." style="margin-bottom: 1rem; width: 100%;">
+                <div style="overflow-x: auto;">
+                    <table id="table-turbos">
+                        <thead>
+                            <tr><th>Tipo</th><th>Código</th><th>Modelo</th><th>Vehículo</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
-function openAddModal(cat) {
-    editingIndex = null;
-    document.getElementById('modal-category').value = cat;
-    document.getElementById('modal-title').innerText = "Agregar Producto";
-    document.getElementById('input-code').disabled = false;
-    document.getElementById('add-modal').classList.remove('hidden');
-}
+        <!-- Pestaña Lubricentro -->
+        <div id="lubricentro" class="tab-content">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2>Inventario de Lubricentro</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <label class="btn-tab" style="background:#f1f5f9; padding: 0.8rem; border-radius: 8px; cursor: pointer;">
+                            📥 Importar Excel
+                            <input type="file" id="import-lubricentro" hidden accept=".xlsx, .xls">
+                        </label>
+                        <button class="btn-primary" onclick="openAddModal('lubricentro')">+ Nuevo Producto</button>
+                    </div>
+                </div>
+                <div class="card" style="background: #f8fafc; border: 1px dashed #cbd5e1;">
+                    <h3>Punto de Venta Rápido</h3>
+                    <div class="search-box">
+                        <input type="text" id="pos-search" placeholder="Buscar producto para vender (ej. Filtro, T001)...">
+                    </div>
+                    <div id="pos-suggestions" class="hidden" style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; max-height: 200px; overflow-y: auto; margin-top: -15px; margin-bottom: 15px; position: absolute; width: calc(100% - 3rem); z-index: 10;"></div>
+                    <div id="pos-selected-info"></div>
+                </div>
+                <input type="text" id="search-lubricentro" placeholder="Buscar por código o nombre..." style="margin-bottom: 1rem; width: 100%;">
+                <div style="overflow-x: auto;">
+                    <table id="table-lubricentro">
+                        <thead>
+                            <tr><th>Tipo</th><th>Código</th><th>Artículo</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
-function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
+        <!-- Libro Diario -->
+        <div id="libro-turbos" class="tab-content">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2>Libro Diario: Turbos</h2>
+                    <h3 id="total-sales-turbos" style="color: var(--accent);">$0.00</h3>
+                </div>
+                <table id="table-ventas-turbos">
+                    <thead><tr><th>Fecha y Hora</th><th>Producto</th><th>Precio</th><th>Acciones</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
 
-function setupModal() {
-    const form = document.getElementById('add-form');
-    form.onsubmit = async (e) => {
-        e.preventDefault();
-        const cat = document.getElementById('modal-category').value;
-        const item = {
-            id: document.getElementById('input-code').value.toUpperCase(),
-            type: document.getElementById('input-type').value,
-            name: document.getElementById('input-name').value,
-            price: parseFloat(document.getElementById('input-price').value),
-            stock: parseInt(document.getElementById('input-stock').value),
-            vehicle: document.getElementById('input-vehicle').value
-        };
-        if (editingIndex !== null) inventory[cat][editingIndex] = item; else inventory[cat].push(item);
-        await saveData(); renderAll(); closeAddModal();
-    };
-}
+        <div id="libro-lubricentro" class="tab-content">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2>Libro Diario: Lubricentro</h2>
+                    <h3 id="total-sales-lubricentro" style="color: var(--accent);">$0.00</h3>
+                </div>
+                <table id="table-ventas-lubricentro">
+                    <thead><tr><th>Fecha y Hora</th><th>Producto</th><th>Precio</th><th>Acciones</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
 
-function setupImport() {
-    document.getElementById('import-turbos').onchange = (e) => handleImport(e, 'turbos');
-    document.getElementById('import-lubricentro').onchange = (e) => handleImport(e, 'lubricentro');
-}
+        <!-- Pestaña Presupuesto -->
+        <div id="presupuesto" class="tab-content">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h2>📋 Presupuesto Inteligente</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <label class="btn-tab" style="background:#f1f5f9; padding: 0.8rem; border-radius: 8px; cursor: pointer; font-size: 0.8rem;">
+                            📥 Actualizar Filtros
+                            <input type="file" id="import-wega-manual" hidden accept=".xlsx, .xls">
+                        </label>
+                        <span id="wega-status" class="sync-badge">Cargando...</span>
+                    </div>
+                </div>
+                
+                <div class="budget-grid">
+                    <div>
+                        <h4>1. Buscar Vehículo</h4>
+                        <div class="search-box">
+                            <input type="text" id="budget-search" placeholder="Ej: Palio 1.4, Hilux 2018...">
+                            <button class="btn-primary" id="btn-search-budget">🔍 Buscar en Catálogo</button>
+                            <!-- BOTÓN NUEVO CATÁLOGO WEB -->
+                            <button type="button" onclick="window.open('https://www.wega.com.ar/catalogo', '_blank')" style="background:#64748b; color:white;">🌐 Ver Web Wega</button>
+                        </div>
+                        <div id="wega-results-container" class="hidden">
+                            <h5>Resultados WEGA (Click para seleccionar)</h5>
+                            <div id="wega-options" style="max-height: 400px; overflow-y: auto;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <h4>2. Configuración del Servicio</h4>
+                        <div id="budget-config">
+                            <div class="config-item"><span>🛢️ Aceite:</span> <strong id="sel-oil">-</strong></div>
+                            <div class="config-item"><span>🌬️ Aire:</span> <strong id="sel-air">-</strong></div>
+                            <div class="config-item"><span>⛽ Combustible:</span> <strong id="sel-fuel">-</strong></div>
+                            <div class="config-item"><span>🏠 Habitáculo:</span> <strong id="sel-cabin">-</strong></div>
+                        </div>
+                        <div style="margin-top: 1.5rem;">
+                            <label>Seleccionar Aceite (Inventario)</label>
+                            <select id="budget-oil-select" style="width: 100%; margin-bottom: 1rem;"></select>
+                            <div style="display: flex; gap: 10px;">
+                                <div style="flex:1">
+                                    <label>Litros</label>
+                                    <input type="number" id="budget-oil-liters" value="4" step="0.1">
+                                </div>
+                                <div style="flex:1">
+                                    <label>Mano de Obra ($)</label>
+                                    <input type="number" id="budget-labor" value="0">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="budget-result" class="hidden">
+                            <div id="budget-items" style="margin-top: 1rem; font-size: 0.9rem; border-top: 1px solid #e2e8f0; padding-top: 1rem;"></div>
+                            <div id="budget-total" class="total-box"></div>
+                            <button id="btn-whatsapp" class="btn-success" style="width: 100%; justify-content: center; margin-top: 10px;">📱 Enviar por WhatsApp</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-function parseMoney(val) {
-    if (!val) return 0;
-    if (typeof val === 'number') return val;
-    let clean = val.toString().replace(/\$/g, '').replace(/\s/g, '');
-    if (clean.includes(',') && clean.includes('.')) { clean = clean.replace(/\./g, '').replace(',', '.'); }
-    else if (clean.includes(',')) { clean = clean.replace(',', '.'); }
-    return parseFloat(clean) || 0;
-}
+    <!-- Modal Agregar/Editar -->
+    <div id="add-modal" class="modal hidden">
+        <div class="card" style="width: 100%; max-width: 500px;">
+            <h2 id="modal-title">Agregar Producto</h2>
+            <form id="add-form">
+                <input type="hidden" id="modal-category">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div><label>Tipo</label><input type="text" id="input-type" placeholder="Ej: Aceite, Filtro..."></div>
+                    <div><label>Código</label><input type="text" id="input-code" required></div>
+                </div>
+                <div style="margin-bottom: 1rem;"><label>Nombre / Modelo</label><input type="text" id="input-name" required></div>
+                <div id="group-vehicle" style="margin-bottom: 1rem; display: none;"><label>Vehículo</label><input type="text" id="input-vehicle"></div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                    <div><label>Precio</label><input type="number" id="input-price" step="0.01" required></div>
+                    <div><label>Stock</label><input type="number" id="input-stock" required></div>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" onclick="closeAddModal()" style="background:#e2e8f0;">Cancelar</button>
+                    <button type="submit" class="btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
-async function handleImport(event, category) {
-    const file = event.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
-            const heads = json[0].map(h => (h || '').toString().toLowerCase().trim());
-            let col = { type: heads.indexOf('tipo'), id: heads.findIndex(h => h.includes('articulo') || h.includes('código')), name: heads.findIndex(h => h.includes('nombre') || h.includes('modelo')), price: heads.indexOf('precio'), stock: heads.findIndex(h => h.includes('stock') && h.includes('actual')), vehicle: heads.indexOf('vehículo') };
-            if (col.price === -1) col.price = 4;
-            if (col.stock === -1) col.stock = 7;
-            if (category === 'turbos' && col.stock === 7) col.stock = 6;
-            const items = [];
-            for (let i = 1; i < json.length; i++) {
-                const r = json[i]; if (!r[col.name] && !r[col.id]) continue;
-                const itemName = (r[col.name] || 'S/N').toString();
-                items.push({ id: (r[col.id] || itemName).toString(), type: (r[col.type] || '').toString(), name: itemName, vehicle: col.vehicle !== -1 ? (r[col.vehicle] || '').toString() : '', price: parseMoney(r[col.price]), stock: parseInt(r[col.stock]) || 0, category });
-            }
-            inventory[category] = items; await saveData(); renderAll(); alert("✅ Éxito: " + items.length + " productos.");
-        } catch (err) { alert("Error al importar"); }
-    };
-    reader.readAsArrayBuffer(file);
-}
-
-function setupPOS() {
-    const input = document.getElementById('pos-search');
-    const sugg = document.getElementById('pos-suggestions'); if (!input) return;
-    input.oninput = (e) => {
-        const q = e.target.value.toLowerCase(); sugg.innerHTML = '';
-        if (q.length < 2) return sugg.classList.add('hidden');
-        let res = [];
-        ['turbos', 'lubricentro'].forEach(cat => inventory[cat].forEach((item, index) => { if (item.name.toLowerCase().includes(q) || item.id.toLowerCase().includes(q)) res.push({ item, cat, index }); }));
-        if (res.length > 0) {
-            sugg.classList.remove('hidden');
-            res.forEach(r => {
-                const div = document.createElement('div'); div.className = 'suggestion-item'; div.innerText = r.item.name;
-                div.onclick = () => {
-                    const p = r.item; const c = p.price; const d = c * DEBIT_PERCENT; const cr = c * CREDIT_PERCENT;
-                    document.getElementById('pos-selected-info').innerHTML = `<div class="pos-card"><strong>${p.name}</strong><div class="pos-prices"><div class="price-tag cash"><span>Efectivo</span><span>$${c.toFixed(2)}</span><button onclick="completeSale('${r.cat}', ${r.index}, ${c}, 'Efectivo')">Vender</button></div><div class="price-tag debit"><span>Débito</span><span>$${d.toFixed(2)}</span><button onclick="completeSale('${r.cat}', ${r.index}, ${d}, 'Débito')">Vender</button></div><div class="price-tag credit"><span>Crédito</span><span>$${cr.toFixed(2)}</span><button onclick="completeSale('${r.cat}', ${r.index}, ${cr}, 'Crédito')">Vender</button></div></div></div>`;
-                    input.value = ''; sugg.classList.add('hidden');
-                };
-                sugg.appendChild(div);
-            });
-        }
-    };
-}
-
-async function completeSale(cat, index, price, method) {
-    const item = inventory[cat][index]; if (item.stock <= 0) return alert("Sin stock");
-    item.stock--; 
-    sales.push({ id: item.id, item_id: item.id, name: `${item.name} (${method})`, category: cat, price, date: new Date().toISOString() });
-    await saveData(); renderAll();
-}
-
-function setupTabs() {
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.onclick = () => {
-        document.querySelectorAll('.tab-btn, .tab-content').forEach(el => el.classList.remove('active'));
-        btn.classList.add('active'); document.getElementById(btn.dataset.tab).classList.add('active');
-    });
-}
-
-function setupSearch() {
-    const st = document.getElementById('search-turbos'), sl = document.getElementById('search-lubricentro');
-    if (st) st.oninput = (e) => renderTurbos(e.target.value); if (sl) sl.oninput = (e) => renderLubricentro(e.target.value);
-}
-
-function changeStock(cat, idx, amt) { if (inventory[cat][idx].stock + amt >= 0) { inventory[cat][idx].stock += amt; saveData(); renderAll(); } }
-
-async function loadWegaExcel() {
-    const status = document.getElementById('wega-status'); if (!status) return;
-    try {
-        const res = await fetch('precios_limpios.xlsx');
-        if (!res.ok) throw new Error("No se encontró");
-        const data = await res.arrayBuffer(); processWegaData(data);
-        status.innerText = "✅ Lista Lista"; status.style.background = "#dcfce7";
-    } catch (e) { status.innerText = "⚠️ Subir Excel"; status.style.background = "#fef3c7"; }
-}
-
-function setupWegaManualImport() {
-    const input = document.getElementById('import-wega-manual');
-    if (input) {
-        input.onchange = (e) => {
-            const file = e.target.files[0]; if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                try { processWegaData(event.target.result); alert("✅ Filtros cargados"); document.getElementById('wega-status').innerText = "✅ Lista Lista"; } catch (err) { alert("Error"); }
-            };
-            reader.readAsArrayBuffer(file);
-        };
-    }
-}
-
-function processWegaData(data) {
-    const wb = XLSX.read(data);
-    const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-    let start = 0; for(let i=0; i<raw.length; i++) { if (raw[i][1] && raw[i][2]) { start = i; break; } }
-    wegaData = raw.slice(start).map(row => {
-        let p = parseFloat(row[3]) || 0; if (p > 0 && p < 1000) p = p * 1000;
-        return { category: (row[0] || '').toString().toUpperCase(), code: (row[1] || '').toString().toUpperCase(), desc: (row[2] || '').toString(), price: p };
-    }).filter(item => item.code && item.desc);
-}
-
-function updateOilSelect() {
-    const select = document.getElementById('budget-oil-select'); if (!select) return;
-    select.innerHTML = '<option value="">-- Seleccionar Aceite --</option>';
-    if (inventory.lubricentro.length === 0) return;
-    inventory.lubricentro.forEach(item => {
-        const option = document.createElement('option'); option.value = item.id; option.innerText = `${item.name} ($${item.price}/L)`; select.appendChild(option);
-    });
-}
-
-function setupBudget() {
-    const btnSearch = document.getElementById('btn-search-budget');
-    const btnWA = document.getElementById('btn-whatsapp');
-    if (btnSearch) btnSearch.onclick = () => {
-        const q = document.getElementById('budget-search').value.toLowerCase().trim();
-        if (q.length < 3) return alert("Escriba marca y modelo");
-        currentSelection = { oil: null, air: null, fuel: null, cabin: null };
-        document.querySelectorAll('.config-item strong').forEach(el => el.innerText = '-');
-        searchInWega(q);
-    };
-    const laborInput = document.getElementById('budget-labor');
-    const litersInput = document.getElementById('budget-oil-liters');
-    const oilSelect = document.getElementById('budget-oil-select');
-    if (laborInput) laborInput.oninput = () => calculateBudgetTotal();
-    if (litersInput) litersInput.oninput = () => calculateBudgetTotal();
-    if (oilSelect) oilSelect.onchange = () => {
-        const oil = inventory.lubricentro.find(i => i.id === oilSelect.value);
-        if (oil) { currentSelection.oil_price_l = oil.price; currentSelection.oil_name = oil.name; }
-        else { currentSelection.oil_price_l = 0; currentSelection.oil_name = null; }
-        calculateBudgetTotal();
-    };
-    if (btnWA) btnWA.onclick = () => copyBudgetToWhatsApp();
-}
-
-function searchInWega(q) {
-    const words = q.split(' ').filter(w => w.length > 1);
-    const grid = document.getElementById('wega-options'); grid.innerHTML = '';
-    const cats = { oil: { title: "🛢️ Aceite", filters: [] }, air: { title: "🌬️ Aire", filters: [] }, fuel: { title: "⛽ Combustible", filters: [] }, cabin: { title: "🏠 Habitáculo", filters: [] } };
-    let any = false;
-    wegaData.forEach(item => {
-        const d = item.desc.toLowerCase(); const c = item.code; const cat = item.category.toLowerCase();
-        if (words.every(w => d.includes(w))) {
-            let type = null;
-            // CORRECCIÓN: Palabras de búsqueda en minúsculas para que coincidan con cat.toLowerCase()
-            if (cat.includes('aceite') || c.startsWith('WEO') || c.startsWith('WO')) type = 'oil';
-            else if (cat.includes('aire') || c.startsWith('FAP') || c.startsWith('WAP')) type = 'air';
-            else if (cat.includes('combustible') || cat.includes('diesel') || c.startsWith('FCI')) type = 'fuel';
-            else if (cat.includes('habitaculo') || cat.includes('cabina') || c.startsWith('AKX')) type = 'cabin';
-            
-            if (type) { cats[type].filters.push({ code: c, desc: item.desc, price: item.price }); any = true; }
-        }
-    });
-    if (!any) { grid.innerHTML = '<p>No se encontraron filtros.</p>'; }
-    else {
-        Object.keys(cats).forEach(t => {
-            if (cats[t].filters.length > 0) {
-                const h = document.createElement('h5'); h.innerText = cats[t].title; grid.appendChild(h);
-                cats[t].filters.slice(0, 5).forEach((f, idx) => {
-                    const div = document.createElement('div'); div.className = 'option-item';
-                    div.innerHTML = `<strong>${f.code}</strong><small>${f.desc}</small><div>$${(f.price * 1.6).toFixed(0)}</div>`;
-                    div.onclick = () => { currentSelection[t] = f; document.getElementById(`sel-${t}`).innerText = f.code; calculateBudgetTotal(); };
-                    grid.appendChild(div); if (idx === 0) div.click();
-                });
-            }
-        });
-    }
-    document.getElementById('wega-results-container').classList.remove('hidden');
-}
-
-function calculateBudgetTotal() {
-    const items = document.getElementById('budget-items'); items.innerHTML = '';
-    let tot = 0;
-    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { if (currentSelection[t]) { const p = currentSelection[t].price * 1.6; tot += p; items.innerHTML += `<p><span>${t.toUpperCase()} (${currentSelection[t].code})</span> <span>$${p.toFixed(0)}</span></p>`; } });
-    const lits = parseFloat(document.getElementById('budget-oil-liters').value) || 0;
-    if (currentSelection.oil_price_l && lits > 0) { const c = currentSelection.oil_price_l * lits; tot += c; items.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${lits}L)</span> <span>$${c.toFixed(0)}</span></p>`; }
-    const labor = parseFloat(document.getElementById('budget-labor').value) || 0;
-    if (labor > 0) { tot += labor; items.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(0)}</span></p>`; }
-    document.getElementById('budget-total').innerHTML = `<h3>Total: $${tot.toFixed(0)}</h3>`;
-    document.getElementById('budget-result').classList.remove('hidden');
-}
-
-function copyBudgetToWhatsApp() {
-    const vehicle = document.getElementById('budget-search').value.toUpperCase();
-    let text = `*PRESUPUESTO TALLER HR*\n🚗 Vehículo: ${vehicle}\n\n`;
-    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { if (currentSelection[t]) text += `✅ Filtro ${t.toUpperCase()}: ${currentSelection[t].code}\n`; });
-    const lits = document.getElementById('budget-oil-liters').value;
-    if (currentSelection.oil_name) text += `✅ Aceite: ${currentSelection.oil_name} (${lits}L)\n`;
-    const total = document.getElementById('budget-total').innerText;
-    text += `\n💰 *${total}*`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`);
-}
-
-init();
+    <script src="app.js"></script>
+</body>
+</html>
