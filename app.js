@@ -251,7 +251,24 @@ function setupPOS() {
                 div.innerHTML = `<strong>${r.item.id}</strong> - ${r.item.name}`;
                 div.onclick = () => {
                     const p = r.item; const c = p.price; const d = c * DEBIT_PERCENT; const cr = c * CREDIT_PERCENT;
-                    document.getElementById('pos-selected-info').innerHTML = `<div class="card" style="background:#f8fafc"><strong>${p.name}</strong><br>Efectivo: $${c}<br>Débito: $${d.toFixed(2)}<br>Crédito: $${cr.toFixed(2)}<br><button class="btn-success" onclick="completeSale('${r.cat}', ${r.index}, ${c}, 'Efectivo')">Vender Efectivo</button></div>`;
+                    document.getElementById('pos-selected-info').innerHTML = `
+                        <div class="card" style="background:#f8fafc; border: 1px solid #e2e8f0; padding: 1rem; border-radius: 12px;">
+                            <strong style="font-size:1.1rem; display:block; margin-bottom:1rem;">${p.name}</strong>
+                            <div style="display:flex; flex-direction:column; gap:10px;">
+                                <div class="price-tag" style="background:#dcfce7; color:#166534; display:flex; justify-content:space-between; align-items:center; padding:10px; border-radius:8px; font-weight:bold;">
+                                    <span>Efectivo: $${c.toFixed(2)}</span>
+                                    <button class="btn-success" style="padding:5px 15px;" onclick="completeSale('${r.cat}', ${r.index}, ${c}, 'Efectivo')">Vender</button>
+                                </div>
+                                <div class="price-tag" style="background:#e0f2fe; color:#0369a1; display:flex; justify-content:space-between; align-items:center; padding:10px; border-radius:8px; font-weight:bold;">
+                                    <span>Débito: $${d.toFixed(2)}</span>
+                                    <button style="background:#0ea5e9; color:white; padding:5px 15px; border:none; border-radius:6px; cursor:pointer;" onclick="completeSale('${r.cat}', ${r.index}, ${d}, 'Débito')">Vender</button>
+                                </div>
+                                <div class="price-tag" style="background:#fef3c7; color:#92400e; display:flex; justify-content:space-between; align-items:center; padding:10px; border-radius:8px; font-weight:bold;">
+                                    <span>Crédito: $${cr.toFixed(2)}</span>
+                                    <button style="background:#f59e0b; color:white; padding:5px 15px; border:none; border-radius:6px; cursor:pointer;" onclick="completeSale('${r.cat}', ${r.index}, ${cr}, 'Crédito')">Vender</button>
+                                </div>
+                            </div>
+                        </div>`;
                     input.value = ''; sugg.classList.add('hidden');
                 };
                 sugg.appendChild(div);
