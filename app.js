@@ -17,11 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (form) {
         form.onsubmit = async (e) => {
             e.preventDefault();
-            console.log("Intentando entrar...");
-            if (!client) {
-                alert("Conectando... espera 2 segundos y vuelve a intentar.");
-                return;
-            }
+            if (!client) { alert("Conectando..."); return; }
             const email = document.getElementById('login-email').value;
             const password = document.getElementById('login-password').value;
             try {
@@ -251,10 +247,11 @@ function setupPOS() {
         if (res.length > 0) {
             sugg.classList.remove('hidden');
             res.forEach(r => {
-                const div = document.createElement('div'); div.className = 'suggestion-item'; div.innerText = r.item.name;
+                const div = document.createElement('div'); div.className = 'suggestion-item'; div.style.padding="10px"; div.style.cursor="pointer"; div.style.borderBottom="1px solid #eee";
+                div.innerHTML = `<strong>${r.item.id}</strong> - ${r.item.name}`;
                 div.onclick = () => {
                     const p = r.item; const c = p.price; const d = c * DEBIT_PERCENT; const cr = c * CREDIT_PERCENT;
-                    document.getElementById('pos-selected-info').innerHTML = `<div><strong>${p.name}</strong><br>Efectivo: $${c}<br>Débito: $${d}<br>Crédito: $${cr}<br><button onclick="completeSale('${r.cat}', ${r.index}, ${c}, 'Efectivo')">Vender Efectivo</button></div>`;
+                    document.getElementById('pos-selected-info').innerHTML = `<div class="card" style="background:#f8fafc"><strong>${p.name}</strong><br>Efectivo: $${c}<br>Débito: $${d.toFixed(2)}<br>Crédito: $${cr.toFixed(2)}<br><button class="btn-success" onclick="completeSale('${r.cat}', ${r.index}, ${c}, 'Efectivo')">Vender Efectivo</button></div>`;
                     input.value = ''; sugg.classList.add('hidden');
                 };
                 sugg.appendChild(div);
@@ -350,20 +347,20 @@ function searchInWega(q) {
         const d = item.desc.toLowerCase(); const c = item.code; const cat = item.category.toLowerCase();
         if (words.every(w => d.includes(w))) {
             let type = null;
-            if (cat.includes('aceite') || c.startsWith('WEO')) type = 'oil';
-            else if (cat.includes('aire') || c.startsWith('FAP')) type = 'air';
-            else if (cat.includes('combustible') || c.startsWith('FCI')) type = 'fuel';
-            else if (cat.includes('habitaculo') || c.startsWith('AKX')) type = 'cabin';
+            if (cat.includes('aceite') || c.startsWith('WEO') || c.startsWith('WO')) type = 'oil';
+            else if (cat.includes('aire') || c.startsWith('FAP') || c.startsWith('WAP')) type = 'air';
+            else if (cat.includes('combustible') || cat.includes('diesel') || c.startsWith('FCI')) type = 'fuel';
+            else if (cat.includes('habitaculo') || cat.includes('cabina') || c.startsWith('AKX')) type = 'cabin';
             if (type) { cats[type].filters.push({ code: c, desc: item.desc, price: item.price }); any = true; }
         }
     });
     if (!any) grid.innerHTML = '<p>No se encontraron filtros.</p>';
     else Object.keys(cats).forEach(t => {
         if (cats[t].filters.length > 0) {
-            const h = document.createElement('h5'); h.innerText = cats[t].title; grid.appendChild(h);
+            const h = document.createElement('h5'); h.style.marginTop="10px"; h.style.color="var(--accent)"; h.innerText = cats[t].title; grid.appendChild(h);
             cats[t].filters.slice(0, 5).forEach((f, idx) => {
                 const div = document.createElement('div'); div.className = 'option-item';
-                div.innerHTML = `<strong>${f.code}</strong> - $${(f.price * 1.6).toFixed(0)}`;
+                div.innerHTML = `<strong>${f.code}</strong><small style="display:block; color:#64748b; font-size:0.8rem; margin:4px 0;">${f.desc}</small><div style="font-weight:bold">$${(f.price * 1.6).toFixed(0)}</div>`;
                 div.onclick = () => { currentSelection[t] = f; document.getElementById(`sel-${t}`).innerText = f.code; calculateBudgetTotal(); };
                 grid.appendChild(div); if (idx === 0) div.click();
             });
@@ -375,9 +372,9 @@ function searchInWega(q) {
 function calculateBudgetTotal() {
     const items = document.getElementById('budget-items'); items.innerHTML = '';
     let tot = 0;
-    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { if (currentSelection[t]) { const p = currentSelection[t].price * 1.6; tot += p; items.innerHTML += `<p>${t.toUpperCase()}: $${p.toFixed(0)}</p>`; } });
+    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { if (currentSelection[t]) { const p = currentSelection[t].price * 1.6; tot += p; items.innerHTML += `<p><span>${t.toUpperCase()}:</span> <strong>$${p.toFixed(0)}</strong></p>`; } });
     const lits = parseFloat(document.getElementById('budget-oil-liters').value) || 0;
-    if (currentSelection.oil_price_l && lits > 0) { const c = currentSelection.oil_price_l * lits; tot += c; items.innerHTML += `<p>Aceite: $${c.toFixed(0)}</p>`; }
+    if (currentSelection.oil_price_l && lits > 0) { const c = currentSelection.oil_price_l * lits; tot += c; items.innerHTML += `<p><span>Aceite (${lits}L):</span> <strong>$${c.toFixed(0)}</strong></p>`; }
     const labor = parseFloat(document.getElementById('budget-labor').value) || 0;
     tot += labor;
     document.getElementById('budget-total').innerHTML = `<h3>Total: $${tot.toFixed(0)}</h3>`;
