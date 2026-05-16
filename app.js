@@ -156,54 +156,6 @@ async function anularVentaFinal(index) {
     sales.splice(index, 1); await saveData(); renderAll(); alert("Anulada");
 }
 
-function openEditModal(cat, index) {
-    const item = inventory[cat][index]; editingIndex = index;
-    document.getElementById('modal-category').value = cat;
-    document.getElementById('modal-title').innerText = "Editar Producto";
-    document.getElementById('input-type').value = item.type || '';
-    document.getElementById('input-code').value = item.id;
-    document.getElementById('input-code').disabled = true;
-    document.getElementById('input-name').value = item.name;
-    document.getElementById('input-vehicle').value = item.vehicle || '';
-    document.getElementById('input-price').value = item.price;
-    document.getElementById('input-stock').value = item.stock;
-    document.getElementById('group-vehicle').style.display = cat === 'turbos' ? 'block' : 'none';
-    document.getElementById('add-modal').classList.remove('hidden');
-}
-
-function openAddModal(cat) {
-    editingIndex = null;
-    document.getElementById('modal-category').value = cat;
-    document.getElementById('modal-title').innerText = "Agregar Producto";
-    document.getElementById('input-code').disabled = false;
-    document.getElementById('add-modal').classList.remove('hidden');
-}
-
-function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
-
-function setupModal() {
-    const form = document.getElementById('add-form');
-    form.onsubmit = async (e) => {
-        e.preventDefault();
-        const cat = document.getElementById('modal-category').value;
-        const item = {
-            id: document.getElementById('input-code').value.toUpperCase(),
-            type: document.getElementById('input-type').value,
-            name: document.getElementById('input-name').value,
-            price: parseFloat(document.getElementById('input-price').value),
-            stock: parseInt(document.getElementById('input-stock').value),
-            vehicle: document.getElementById('input-vehicle').value
-        };
-        if (editingIndex !== null) inventory[cat][editingIndex] = item; else inventory[cat].push(item);
-        await saveData(); renderAll(); closeAddModal();
-    };
-}
-
-function setupImport() {
-    document.getElementById('import-turbos').onchange = (e) => handleImport(e, 'turbos');
-    document.getElementById('import-lubricentro').onchange = (e) => handleImport(e, 'lubricentro');
-}
-
 function parseMoney(val) {
     if (!val) return 0;
     if (typeof val === 'number') return val;
@@ -225,24 +177,21 @@ async function handleImport(event, category) {
             const workbook = XLSX.read(data, { type: 'array' });
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
             
-            // BUSCADOR AUTOMÁTICO DE COLUMNAS
-            const headers = json[0].map(h => (h || '').toString().toLowerCase());
+            const heads = json[0].map(h => (h || '').toString().toLowerCase().trim());
+            
             let col = {
-                type: headers.indexOf('tipo'),
-                id: headers.indexOf('id de articulo') !== -1 ? headers.indexOf('id de articulo') : headers.indexOf('código'),
-                name: headers.indexOf('nombre del articulo') !== -1 ? headers.indexOf('nombre del articulo') : headers.indexOf('modelo'),
-                price: headers.indexOf('precio'),
-                stock: headers.indexOf('stock actual'),
-                vehicle: headers.indexOf('vehículo')
+                type: heads.indexOf('tipo'),
+                id: heads.findIndex(h => h.includes('articulo') || h.includes('código')),
+                name: heads.findIndex(h => h.includes('nombre') || h.includes('modelo')),
+                price: heads.indexOf('precio'),
+                stock: heads.findIndex(h => h.includes('stock') && h.includes('actual')),
+                vehicle: heads.indexOf('vehículo')
             };
 
-            // Ajustes si no encuentra alguna (basado en tus capturas)
-            if (col.type === -1) col.type = 0;
-            if (col.id === -1) col.id = 1;
-            if (col.name === -1) col.name = 2;
+            // Si no encuentra por nombre, usar los números que vimos en la foto
             if (col.price === -1) col.price = 4;
             if (col.stock === -1) col.stock = 7;
-            if (category === 'turbos' && col.stock === 7) col.stock = 6; // Ajuste para Turbos
+            if (category === 'turbos' && col.stock === 7) col.stock = 6;
 
             const items = [];
             for (let i = 1; i < json.length; i++) {
@@ -251,7 +200,7 @@ async function handleImport(event, category) {
                 
                 const itemName = (r[col.name] || 'S/N').toString();
                 items.push({ 
-                    id: (r[col.id] || itemName).toString(), // Si el ID está vacío, usa el nombre como ID
+                    id: (r[col.id] || itemName).toString(), 
                     type: (r[col.type] || '').toString(),
                     name: itemName, 
                     vehicle: col.vehicle !== -1 ? (r[col.vehicle] || '').toString() : '', 
@@ -263,7 +212,7 @@ async function handleImport(event, category) {
             inventory[category] = items; 
             await saveData(); 
             renderAll(); 
-            alert("✅ Importación Inteligente Exitosa (" + items.length + " productos)");
+            alert("✅ Importación Exitosa (" + items.length + " productos)");
         } catch (err) { alert("Error al importar"); }
     };
     reader.readAsArrayBuffer(file);
@@ -354,18 +303,6 @@ function updateOilSelect() {
     inventory.lubricentro.forEach(item => {
         const option = document.createElement('option'); option.value = item.id; option.innerText = `${item.name} ($${item.price}/L)`; select.appendChild(option);
     });
-}
-
-function setupBudget() {
-    const btn = document.getElementById('btn-search-budget');
-    if (!btn) return;
-    btn.onclick = () => {
-        const q = document.getElementById('budget-search').value.toLowerCase().trim();
-        if (q.length < 3) return alert("Escriba marca y modelo");
-        currentSelection = { oil: null, air: null, fuel: null, cabin: null };
-        document.querySelectorAll('.config-item strong').forEach(el => el.innerText = '-');
-        searchInWega(q);
-    };
 }
 
 init();
