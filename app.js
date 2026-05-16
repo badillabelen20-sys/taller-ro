@@ -319,14 +319,9 @@ function updateOilSelect() {
     });
 }
 
-// --- PRESUPUESTO INTERACTIVO COMPLETO ---
 function setupBudget() {
     const btnSearch = document.getElementById('btn-search-budget');
     const btnWA = document.getElementById('btn-whatsapp');
-    const laborInput = document.getElementById('budget-labor');
-    const litersInput = document.getElementById('budget-oil-liters');
-    const oilSelect = document.getElementById('budget-oil-select');
-
     if (btnSearch) btnSearch.onclick = () => {
         const q = document.getElementById('budget-search').value.toLowerCase().trim();
         if (q.length < 3) return alert("Escriba marca y modelo");
@@ -334,7 +329,9 @@ function setupBudget() {
         document.querySelectorAll('.config-item strong').forEach(el => el.innerText = '-');
         searchInWega(q);
     };
-
+    const laborInput = document.getElementById('budget-labor');
+    const litersInput = document.getElementById('budget-oil-liters');
+    const oilSelect = document.getElementById('budget-oil-select');
     if (laborInput) laborInput.oninput = () => calculateBudgetTotal();
     if (litersInput) litersInput.oninput = () => calculateBudgetTotal();
     if (oilSelect) oilSelect.onchange = () => {
@@ -355,27 +352,24 @@ function searchInWega(q) {
         const d = item.desc.toLowerCase(); const c = item.code; const cat = item.category.toLowerCase();
         if (words.every(w => d.includes(w))) {
             let type = null;
-            if (cat.includes('ACEITE') || c.startsWith('WEO') || c.startsWith('WO')) type = 'oil';
-            else if (cat.includes('AIRE') || c.startsWith('FAP') || c.startsWith('WAP')) type = 'air';
-            else if (cat.includes('COMBUSTIBLE') || cat.includes('DIESEL') || c.startsWith('FCI')) type = 'fuel';
-            else if (cat.includes('HABITACULO') || cat.includes('AKX')) type = 'cabin';
+            // CORRECCIÓN: Palabras de búsqueda en minúsculas para que coincidan con cat.toLowerCase()
+            if (cat.includes('aceite') || c.startsWith('WEO') || c.startsWith('WO')) type = 'oil';
+            else if (cat.includes('aire') || c.startsWith('FAP') || c.startsWith('WAP')) type = 'air';
+            else if (cat.includes('combustible') || cat.includes('diesel') || c.startsWith('FCI')) type = 'fuel';
+            else if (cat.includes('habitaculo') || cat.includes('cabina') || c.startsWith('AKX')) type = 'cabin';
+            
             if (type) { cats[type].filters.push({ code: c, desc: item.desc, price: item.price }); any = true; }
         }
     });
-    if (!any) {
-        grid.innerHTML = '<p>No se encontraron filtros para esa búsqueda.</p>';
-    } else {
+    if (!any) { grid.innerHTML = '<p>No se encontraron filtros.</p>'; }
+    else {
         Object.keys(cats).forEach(t => {
             if (cats[t].filters.length > 0) {
                 const h = document.createElement('h5'); h.innerText = cats[t].title; grid.appendChild(h);
                 cats[t].filters.slice(0, 5).forEach((f, idx) => {
                     const div = document.createElement('div'); div.className = 'option-item';
                     div.innerHTML = `<strong>${f.code}</strong><small>${f.desc}</small><div>$${(f.price * 1.6).toFixed(0)}</div>`;
-                    div.onclick = () => { 
-                        currentSelection[t] = f; 
-                        document.getElementById(`sel-${t}`).innerText = f.code; 
-                        calculateBudgetTotal(); 
-                    };
+                    div.onclick = () => { currentSelection[t] = f; document.getElementById(`sel-${t}`).innerText = f.code; calculateBudgetTotal(); };
                     grid.appendChild(div); if (idx === 0) div.click();
                 });
             }
@@ -387,24 +381,11 @@ function searchInWega(q) {
 function calculateBudgetTotal() {
     const items = document.getElementById('budget-items'); items.innerHTML = '';
     let tot = 0;
-    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { 
-        if (currentSelection[t]) { 
-            const p = currentSelection[t].price * 1.6; 
-            tot += p; 
-            items.innerHTML += `<p><span>${t.toUpperCase()} (${currentSelection[t].code})</span> <span>$${p.toFixed(0)}</span></p>`; 
-        } 
-    });
+    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { if (currentSelection[t]) { const p = currentSelection[t].price * 1.6; tot += p; items.innerHTML += `<p><span>${t.toUpperCase()} (${currentSelection[t].code})</span> <span>$${p.toFixed(0)}</span></p>`; } });
     const lits = parseFloat(document.getElementById('budget-oil-liters').value) || 0;
-    if (currentSelection.oil_price_l && lits > 0) { 
-        const c = currentSelection.oil_price_l * lits; 
-        tot += c; 
-        items.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${lits}L)</span> <span>$${c.toFixed(0)}</span></p>`; 
-    }
+    if (currentSelection.oil_price_l && lits > 0) { const c = currentSelection.oil_price_l * lits; tot += c; items.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${lits}L)</span> <span>$${c.toFixed(0)}</span></p>`; }
     const labor = parseFloat(document.getElementById('budget-labor').value) || 0;
-    if (labor > 0) { 
-        tot += labor; 
-        items.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(0)}</span></p>`; 
-    }
+    if (labor > 0) { tot += labor; items.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(0)}</span></p>`; }
     document.getElementById('budget-total').innerHTML = `<h3>Total: $${tot.toFixed(0)}</h3>`;
     document.getElementById('budget-result').classList.remove('hidden');
 }
@@ -412,9 +393,7 @@ function calculateBudgetTotal() {
 function copyBudgetToWhatsApp() {
     const vehicle = document.getElementById('budget-search').value.toUpperCase();
     let text = `*PRESUPUESTO TALLER HR*\n🚗 Vehículo: ${vehicle}\n\n`;
-    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { 
-        if (currentSelection[t]) text += `✅ Filtro ${t.toUpperCase()}: ${currentSelection[t].code}\n`; 
-    });
+    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { if (currentSelection[t]) text += `✅ Filtro ${t.toUpperCase()}: ${currentSelection[t].code}\n`; });
     const lits = document.getElementById('budget-oil-liters').value;
     if (currentSelection.oil_name) text += `✅ Aceite: ${currentSelection.oil_name} (${lits}L)\n`;
     const total = document.getElementById('budget-total').innerText;
