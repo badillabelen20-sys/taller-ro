@@ -11,17 +11,8 @@ const CREDIT_PERCENT = 1.096;
 let wegaData = [];
 let currentSelection = { oil: null, air: null, fuel: null, cabin: null };
 
-const DEFAULT_VEHICLES = {
-    "fiorino_14": { name: "Fiat Fiorino 1.4 Fire Evo", oil_type: "5W30", oil_liters: 2.9, filters: ["WEO-0003", "FAP-9054", "FCI-1660", "AKX-1445"] },
-    "hilux_24": { name: "Toyota Hilux 2.4/2.8 (2016+)", oil_type: "5W30", oil_liters: 7.5, filters: ["WEO-0014", "JFA-0213", "FCD-2173", "AKX-1965"] }
-};
-
-let VEHICLE_DB = { ...DEFAULT_VEHICLES };
-let editingIndex = null;
-
 async function init() {
     setupTabs();
-    setupAuth();
     setupSearch();
     setupModal();
     setupPOS();
@@ -31,33 +22,40 @@ async function init() {
     loadWegaExcel();
     loadFromLocal();
     renderAll();
+    
+    // Iniciar Supabase de forma segura
     try {
         if (typeof supabase !== 'undefined') {
             client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            setupAuth(); // Configurar login solo cuando el cliente existe
             const { data } = await client.auth.getSession();
             if (data?.session) {
                 currentUser = data.session.user;
                 document.getElementById('login-screen').classList.add('hidden');
                 await loadFromCloud();
-                await loadCustomVehicles();
             }
+        } else {
+            console.error("Supabase no cargó correctamente.");
         }
     } catch (e) { console.warn("Init error:", e); }
 }
 
 function setupAuth() {
     const form = document.getElementById('login-form');
+    if (!form) return;
     form.onsubmit = async (e) => {
         e.preventDefault();
+        if (!client) return alert("Conectando con el servidor... intenta de nuevo en un segundo.");
         const email = document.getElementById('login-email').value;
         const password = document.getElementById('login-password').value;
         try {
             const { data, error } = await client.auth.signInWithPassword({ email, password });
             if (error) alert("Error: " + error.message);
-            else { currentUser = data.user; document.getElementById('login-screen').classList.add('hidden'); await loadFromCloud(); await loadCustomVehicles(); }
+            else { currentUser = data.user; document.getElementById('login-screen').classList.add('hidden'); await loadFromCloud(); }
         } catch (err) { alert("Error: " + err.message); }
     };
-    document.getElementById('logout-btn').onclick = async () => { if (client) await client.auth.signOut(); location.reload(); };
+    const logout = document.getElementById('logout-btn');
+    if (logout) logout.onclick = async () => { if (client) await client.auth.signOut(); location.reload(); };
 }
 
 async function loadFromCloud() {
@@ -156,6 +154,54 @@ async function anularVentaFinal(index) {
     sales.splice(index, 1); await saveData(); renderAll(); alert("Anulada");
 }
 
+function openEditModal(cat, index) {
+    const item = inventory[cat][index]; editingIndex = index;
+    document.getElementById('modal-category').value = cat;
+    document.getElementById('modal-title').innerText = "Editar Producto";
+    document.getElementById('input-type').value = item.type || '';
+    document.getElementById('input-code').value = item.id;
+    document.getElementById('input-code').disabled = true;
+    document.getElementById('input-name').value = item.name;
+    document.getElementById('input-vehicle').value = item.vehicle || '';
+    document.getElementById('input-price').value = item.price;
+    document.getElementById('input-stock').value = item.stock;
+    document.getElementById('group-vehicle').style.display = cat === 'turbos' ? 'block' : 'none';
+    document.getElementById('add-modal').classList.remove('hidden');
+}
+
+function openAddModal(cat) {
+    editingIndex = null;
+    document.getElementById('modal-category').value = cat;
+    document.getElementById('modal-title').innerText = "Agregar Producto";
+    document.getElementById('input-code').disabled = false;
+    document.getElementById('add-modal').classList.remove('hidden');
+}
+
+function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
+
+function setupModal() {
+    const form = document.getElementById('add-form');
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const cat = document.getElementById('modal-category').value;
+        const item = {
+            id: document.getElementById('input-code').value.toUpperCase(),
+            type: document.getElementById('input-type').value,
+            name: document.getElementById('input-name').value,
+            price: parseFloat(document.getElementById('input-price').value),
+            stock: parseInt(document.getElementById('input-stock').value),
+            vehicle: document.getElementById('input-vehicle').value
+        };
+        if (editingIndex !== null) inventory[cat][editingIndex] = item; else inventory[cat].push(item);
+        await saveData(); renderAll(); closeAddModal();
+    };
+}
+
+function setupImport() {
+    document.getElementById('import-turbos').onchange = (e) => handleImport(e, 'turbos');
+    document.getElementById('import-lubricentro').onchange = (e) => handleImport(e, 'lubricentro');
+}
+
 function parseMoney(val) {
     if (!val) return 0;
     if (typeof val === 'number') return val;
@@ -188,7 +234,6 @@ async function handleImport(event, category) {
                 vehicle: heads.indexOf('vehículo')
             };
 
-            // Si no encuentra por nombre, usar los números que vimos en la foto
             if (col.price === -1) col.price = 4;
             if (col.stock === -1) col.stock = 7;
             if (category === 'turbos' && col.stock === 7) col.stock = 6;
@@ -197,7 +242,6 @@ async function handleImport(event, category) {
             for (let i = 1; i < json.length; i++) {
                 const r = json[i]; 
                 if (!r[col.name] && !r[col.id]) continue;
-                
                 const itemName = (r[col.name] || 'S/N').toString();
                 items.push({ 
                     id: (r[col.id] || itemName).toString(), 
@@ -303,6 +347,18 @@ function updateOilSelect() {
     inventory.lubricentro.forEach(item => {
         const option = document.createElement('option'); option.value = item.id; option.innerText = `${item.name} ($${item.price}/L)`; select.appendChild(option);
     });
+}
+
+function setupBudget() {
+    const btn = document.getElementById('btn-search-budget');
+    if (!btn) return;
+    btn.onclick = () => {
+        const q = document.getElementById('budget-search').value.toLowerCase().trim();
+        if (q.length < 3) return alert("Escriba marca y modelo");
+        currentSelection = { oil: null, air: null, fuel: null, cabin: null };
+        document.querySelectorAll('.config-item strong').forEach(el => el.innerText = '-');
+        searchInWega(q);
+    };
 }
 
 init();
