@@ -204,6 +204,19 @@ function setupImport() {
     document.getElementById('import-lubricentro').onchange = (e) => handleImport(e, 'lubricentro');
 }
 
+function parseMoney(val) {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    // Limpiar formato de moneda argentina (puntos de miles y comas decimales)
+    let clean = val.toString().replace(/\$/g, '').replace(/\s/g, '');
+    if (clean.includes(',') && clean.includes('.')) {
+        clean = clean.replace(/\./g, '').replace(',', '.');
+    } else if (clean.includes(',')) {
+        clean = clean.replace(',', '.');
+    }
+    return parseFloat(clean) || 0;
+}
+
 async function handleImport(event, category) {
     const file = event.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -213,9 +226,6 @@ async function handleImport(event, category) {
             const workbook = XLSX.read(data, { type: 'array' });
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
             
-            // MAPEO SEGÚN CAPTURAS DE GOOGLE SHEETS
-            // Turbos: A:Tipo(0), B:ID(1), C:Modelo(2), D:Vehiculo(3), G:Stock(6), H:Precio(7)
-            // Lubricentro: A:Tipo(0), B:ID(1), C:Nombre(2), E:Precio(4), H:Stock(7)
             let col = category === 'turbos' 
                 ? { type:0, id:1, name:2, vehicle:3, stock:6, price:7 } 
                 : { type:0, id:1, name:2, price:4, stock:7 };
@@ -223,14 +233,14 @@ async function handleImport(event, category) {
             const items = [];
             for (let i = 1; i < json.length; i++) {
                 const r = json[i]; 
-                if (!r[col.id]) continue;
+                if (!r[col.id] && !r[col.name]) continue;
                 
                 items.push({ 
-                    id: r[col.id].toString(), 
+                    id: (r[col.id] || '').toString(), 
                     type: (r[col.type] || '').toString(),
                     name: (r[col.name] || 'S/N').toString(), 
                     vehicle: col.vehicle ? (r[col.vehicle] || '').toString() : '', 
-                    price: parseFloat(r[col.price]) || 0, 
+                    price: parseMoney(r[col.price]), 
                     stock: parseInt(r[col.stock]) || 0, 
                     category 
                 });
@@ -238,7 +248,7 @@ async function handleImport(event, category) {
             inventory[category] = items; 
             await saveData(); 
             renderAll(); 
-            alert("✅ Importación Exitosa");
+            alert("✅ Importación Exitosa (" + items.length + " productos)");
         } catch (err) { alert("Error al importar"); }
     };
     reader.readAsArrayBuffer(file);
@@ -332,7 +342,9 @@ function updateOilSelect() {
 }
 
 function setupBudget() {
-    document.getElementById('btn-search-budget').onclick = () => {
+    const btn = document.getElementById('btn-search-budget');
+    if (!btn) return;
+    btn.onclick = () => {
         const q = document.getElementById('budget-search').value.toLowerCase().trim();
         if (q.length < 3) return alert("Escriba marca y modelo");
         currentSelection = { oil: null, air: null, fuel: null, cabin: null };
