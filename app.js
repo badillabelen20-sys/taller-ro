@@ -27,6 +27,7 @@ async function init() {
     setupPOS();
     setupImport();
     setupBudget();
+    setupWegaManualImport();
     loadWegaExcel();
     loadFromLocal();
     renderAll();
@@ -99,7 +100,7 @@ function loadFromLocal() {
     if (sls) sales = JSON.parse(sls);
 }
 
-function renderAll() { renderTurbos(); renderLubricentro(); renderSales(); }
+function renderAll() { renderTurbos(); renderLubricentro(); renderSales(); updateOilSelect(); }
 
 function renderTurbos(filter = '') {
     const tbody = document.querySelector('#table-turbos tbody'); if (!tbody) return;
@@ -265,11 +266,72 @@ function changeStock(cat, idx, amt) { if (inventory[cat][idx].stock + amt >= 0) 
 async function loadWegaExcel() {
     const status = document.getElementById('wega-status'); if (!status) return;
     try {
-        const res = await fetch('Lista de Precios General (05) - Octubre 2025.xlsx');
-        const data = await res.arrayBuffer(); const wb = XLSX.read(data);
-        wegaData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        status.innerText = "✅ WEGA Lista"; status.style.background = "#dcfce7";
-    } catch (e) { status.innerText = "❌ Error WEGA"; }
+        const res = await fetch('precios_limpios.xlsx');
+        if (!res.ok) throw new Error("No se encontró el archivo");
+        const data = await res.arrayBuffer();
+        processWegaData(data);
+        status.innerText = "✅ Lista Lista"; status.style.background = "#dcfce7";
+    } catch (e) { 
+        status.innerText = "⚠️ Subir Excel"; 
+        status.style.background = "#fef3c7";
+    }
+}
+
+function setupWegaManualImport() {
+    const input = document.getElementById('import-wega-manual');
+    if (input) {
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    processWegaData(event.target.result);
+                    alert("✅ Lista de filtros actualizada correctamente");
+                    document.getElementById('wega-status').innerText = "✅ Lista Lista";
+                    document.getElementById('wega-status').style.background = "#dcfce7";
+                } catch (err) {
+                    alert("Error al procesar el Excel");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
+    }
+}
+
+function processWegaData(data) {
+    const wb = XLSX.read(data);
+    const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+    
+    // Columnas esperadas: Filtros, Codigo, Descripcion, Precio
+    // Mapeo: [0:Filtros, 1:Codigo, 2:Descripcion, 3:Precio]
+    wegaData = raw.slice(1).map(row => {
+        let price = parseFloat(row[3]) || 0;
+        // Lógica: si el precio es bajo (ej: 9.95), multiplicar por 1000 -> 9950
+        if (price > 0 && price < 1000) price = price * 1000;
+        
+        return {
+            category: (row[0] || '').toString().toUpperCase(),
+            code: (row[1] || '').toString().toUpperCase(),
+            desc: (row[2] || '').toString(),
+            price: price
+        };
+    }).filter(item => item.code);
+}
+
+function updateOilSelect() {
+    const select = document.getElementById('budget-oil-select');
+    if (!select) return;
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">-- Seleccionar Aceite --</option>';
+    
+    inventory.lubricentro.forEach(item => {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.innerText = `${item.name} ($${item.price}/L)`;
+        if (item.id === currentVal) option.selected = true;
+        select.appendChild(option);
+    });
 }
 
 // --- PRESUPUESTO INTERACTIVO ---
@@ -296,6 +358,20 @@ function setupBudget() {
     };
 
     laborInput.oninput = () => calculateBudgetTotal();
+    document.getElementById('budget-oil-liters').oninput = () => calculateBudgetTotal();
+    document.getElementById('budget-oil-select').onchange = () => {
+        const select = document.getElementById('budget-oil-select');
+        const oilId = select.value;
+        const oilProd = inventory.lubricentro.find(i => i.id === oilId);
+        if (oilProd) {
+            currentSelection.oil_price_l = oilProd.price;
+            currentSelection.oil_name = oilProd.name;
+        } else {
+            currentSelection.oil_price_l = 0;
+            currentSelection.oil_name = null;
+        }
+        calculateBudgetTotal();
+    };
     btnWA.onclick = () => copyBudgetToWhatsApp();
     btnSave.onclick = () => saveCurrentVehicleConfig();
 }
@@ -313,17 +389,19 @@ function searchInWega(query) {
         cabin: { title: "🏠 Habitáculo (AKX)", filters: [] }
     };
 
-    wegaData.forEach(row => {
-        const desc = (row[3] || '').toString().toLowerCase();
-        const code = (row[1] || '').toString().toUpperCase();
+    wegaData.forEach(item => {
+        const desc = item.desc.toLowerCase();
+        const code = item.code;
+        const catName = item.category.toLowerCase();
+        
         if (words.every(w => desc.includes(w))) {
             let type = null;
-            if (code.startsWith('WEO') || code.startsWith('WO')) type = 'oil';
-            else if (code.startsWith('FAP') || code.startsWith('WAP')) type = 'air';
-            else if (code.startsWith('FCI') || code.startsWith('FCD') || code.startsWith('FCE')) type = 'fuel';
-            else if (code.startsWith('AKX')) type = 'cabin';
+            if (catName.includes('aceite') || code.startsWith('WEO') || code.startsWith('WO')) type = 'oil';
+            else if (catName.includes('aire') || code.startsWith('FAP') || code.startsWith('WAP')) type = 'air';
+            else if (catName.includes('combustible') || catName.includes('diesel') || catName.includes('inyeccion') || code.startsWith('FCI') || code.startsWith('FCD') || code.startsWith('FCE')) type = 'fuel';
+            else if (catName.includes('habitaculo') || catName.includes('polen') || code.startsWith('AKX')) type = 'cabin';
             
-            if (type) categories[type].filters.push({ code, desc: row[3], price: parseFloat(row[10])||0 });
+            if (type) categories[type].filters.push({ code, desc: item.desc, price: item.price });
         }
     });
 
@@ -332,12 +410,16 @@ function searchInWega(query) {
         if (cat.filters.length > 0) {
             const header = document.createElement('h5'); header.innerText = cat.title;
             optionsGrid.appendChild(header);
-            cat.filters.slice(0, 5).forEach(f => {
+            // Mostrar los primeros resultados y auto-seleccionar el primero si no hay ninguno
+            cat.filters.slice(0, 3).forEach((f, idx) => {
                 const item = document.createElement('div');
                 item.className = 'option-item';
-                item.innerHTML = `<strong>${f.code}</strong><small>${f.desc}</small>`;
+                item.innerHTML = `<strong>${f.code}</strong><small>${f.desc}</small><div style="color:var(--primary); font-weight:bold;">$${(f.price * 1.6).toFixed(0)}</div>`;
                 item.onclick = () => selectFilter(type, f);
                 optionsGrid.appendChild(item);
+                
+                // Auto-seleccionar el primero para agilizar
+                if (idx === 0 && !currentSelection[type]) selectFilter(type, f);
             });
         }
     });
@@ -372,9 +454,9 @@ function loadVehicleConfig(v) {
     
     // Mapear filtros de la base de datos
     v.filters.forEach(code => {
-        // Buscar el precio actual en el Excel
-        const row = wegaData.find(r => (r[1]||'').toString().toUpperCase() === code.toUpperCase());
-        const filterObj = { code, desc: row ? row[3] : 'Filtro Guardado', price: row ? parseFloat(row[10])||0 : 0 };
+        // Buscar el precio actual en los datos cargados
+        const item = wegaData.find(r => r.code === code.toUpperCase());
+        const filterObj = { code, desc: item ? item.desc : 'Filtro Guardado', price: item ? item.price : 0 };
         
         if (code.startsWith('WEO') || code.startsWith('WO')) selectFilter('oil', filterObj);
         else if (code.startsWith('FAP') || code.startsWith('WAP')) selectFilter('air', filterObj);
@@ -399,23 +481,24 @@ function calculateBudgetTotal() {
         if (f && type !== 'oil_liters' && type !== 'oil_price_l' && type !== 'oil_name') {
             const price = f.price * 1.6;
             total += price;
-            itemsDiv.innerHTML += `<p><span>${type.toUpperCase()} (${f.code})</span> <span>$${price.toFixed(2)}</span></p>`;
+            itemsDiv.innerHTML += `<p><span>${type.toUpperCase()} (${f.code})</span> <span>$${price.toFixed(0)}</span></p>`;
         }
     });
 
-    if (currentSelection.oil_liters && currentSelection.oil_price_l) {
-        const cost = currentSelection.oil_price_l * currentSelection.oil_liters;
+    const oilLiters = parseFloat(document.getElementById('budget-oil-liters').value) || 0;
+    if (currentSelection.oil_price_l && oilLiters > 0) {
+        const cost = currentSelection.oil_price_l * oilLiters;
         total += cost;
-        itemsDiv.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${currentSelection.oil_liters}L)</span> <span>$${cost.toFixed(2)}</span></p>`;
+        itemsDiv.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${oilLiters}L)</span> <span>$${cost.toFixed(0)}</span></p>`;
     }
 
     const labor = parseFloat(document.getElementById('budget-labor').value) || 0;
     if (labor > 0) {
         total += labor;
-        itemsDiv.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(2)}</span></p>`;
+        itemsDiv.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(0)}</span></p>`;
     }
 
-    totalDiv.innerHTML = `<h3>Total: $${total.toFixed(2)}</h3>`;
+    totalDiv.innerHTML = `<h3>Total: $${total.toFixed(0)}</h3>`;
     resultCard.classList.remove('hidden');
 }
 
