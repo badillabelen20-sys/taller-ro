@@ -207,7 +207,6 @@ function setupImport() {
 function parseMoney(val) {
     if (!val) return 0;
     if (typeof val === 'number') return val;
-    // Limpiar formato de moneda argentina (puntos de miles y comas decimales)
     let clean = val.toString().replace(/\$/g, '').replace(/\s/g, '');
     if (clean.includes(',') && clean.includes('.')) {
         clean = clean.replace(/\./g, '').replace(',', '.');
@@ -226,20 +225,36 @@ async function handleImport(event, category) {
             const workbook = XLSX.read(data, { type: 'array' });
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
             
-            let col = category === 'turbos' 
-                ? { type:0, id:1, name:2, vehicle:3, stock:6, price:7 } 
-                : { type:0, id:1, name:2, price:4, stock:7 };
+            // BUSCADOR AUTOMÁTICO DE COLUMNAS
+            const headers = json[0].map(h => (h || '').toString().toLowerCase());
+            let col = {
+                type: headers.indexOf('tipo'),
+                id: headers.indexOf('id de articulo') !== -1 ? headers.indexOf('id de articulo') : headers.indexOf('código'),
+                name: headers.indexOf('nombre del articulo') !== -1 ? headers.indexOf('nombre del articulo') : headers.indexOf('modelo'),
+                price: headers.indexOf('precio'),
+                stock: headers.indexOf('stock actual'),
+                vehicle: headers.indexOf('vehículo')
+            };
+
+            // Ajustes si no encuentra alguna (basado en tus capturas)
+            if (col.type === -1) col.type = 0;
+            if (col.id === -1) col.id = 1;
+            if (col.name === -1) col.name = 2;
+            if (col.price === -1) col.price = 4;
+            if (col.stock === -1) col.stock = 7;
+            if (category === 'turbos' && col.stock === 7) col.stock = 6; // Ajuste para Turbos
 
             const items = [];
             for (let i = 1; i < json.length; i++) {
                 const r = json[i]; 
-                if (!r[col.id] && !r[col.name]) continue;
+                if (!r[col.name] && !r[col.id]) continue;
                 
+                const itemName = (r[col.name] || 'S/N').toString();
                 items.push({ 
-                    id: (r[col.id] || '').toString(), 
+                    id: (r[col.id] || itemName).toString(), // Si el ID está vacío, usa el nombre como ID
                     type: (r[col.type] || '').toString(),
-                    name: (r[col.name] || 'S/N').toString(), 
-                    vehicle: col.vehicle ? (r[col.vehicle] || '').toString() : '', 
+                    name: itemName, 
+                    vehicle: col.vehicle !== -1 ? (r[col.vehicle] || '').toString() : '', 
                     price: parseMoney(r[col.price]), 
                     stock: parseInt(r[col.stock]) || 0, 
                     category 
@@ -248,7 +263,7 @@ async function handleImport(event, category) {
             inventory[category] = items; 
             await saveData(); 
             renderAll(); 
-            alert("✅ Importación Exitosa (" + items.length + " productos)");
+            alert("✅ Importación Inteligente Exitosa (" + items.length + " productos)");
         } catch (err) { alert("Error al importar"); }
     };
     reader.readAsArrayBuffer(file);
@@ -351,62 +366,6 @@ function setupBudget() {
         document.querySelectorAll('.config-item strong').forEach(el => el.innerText = '-');
         searchInWega(q);
     };
-    document.getElementById('budget-labor').oninput = () => calculateBudgetTotal();
-    document.getElementById('budget-oil-liters').oninput = () => calculateBudgetTotal();
-    document.getElementById('budget-oil-select').onchange = (e) => {
-        const oil = inventory.lubricentro.find(i => i.id === e.target.value);
-        if (oil) { currentSelection.oil_price_l = oil.price; currentSelection.oil_name = oil.name; }
-        calculateBudgetTotal();
-    };
-}
-
-function searchInWega(q) {
-    const words = q.split(' ').filter(w => w.length > 1);
-    const grid = document.getElementById('wega-options'); grid.innerHTML = '';
-    const cats = { oil: { title: "🛢️ Aceite", filters: [] }, air: { title: "🌬️ Aire", filters: [] }, fuel: { title: "⛽ Combustible", filters: [] }, cabin: { title: "🏠 Habitáculo", filters: [] } };
-    let any = false;
-    wegaData.forEach(item => {
-        const d = item.desc.toLowerCase(); const c = item.code; const cat = item.category.toLowerCase();
-        if (words.every(w => d.includes(w))) {
-            let type = null;
-            if (cat.includes('ACEITE') || c.startsWith('WEO')) type = 'oil';
-            else if (cat.includes('AIRE') || c.startsWith('FAP')) type = 'air';
-            else if (cat.includes('COMBUSTIBLE') || cat.includes('DIESEL') || c.startsWith('FCI')) type = 'fuel';
-            else if (cat.includes('HABITACULO') || c.startsWith('AKX')) type = 'cabin';
-            if (type) { cats[type].filters.push({ code: c, desc: item.desc, price: item.price }); any = true; }
-        }
-    });
-    if (!any) grid.innerHTML = '<p>No se encontraron filtros.</p>';
-    else Object.keys(cats).forEach(t => {
-        if (cats[t].filters.length > 0) {
-            const h = document.createElement('h5'); h.innerText = cats[t].title; grid.appendChild(h);
-            cats[t].filters.slice(0, 5).forEach((f, idx) => {
-                const div = document.createElement('div'); div.className = 'option-item';
-                div.innerHTML = `<strong>${f.code}</strong><small>${f.desc}</small><div>$${(f.price * 1.6).toFixed(0)}</div>`;
-                div.onclick = () => { currentSelection[t] = f; document.getElementById(`sel-${t}`).innerText = f.code; calculateBudgetTotal(); };
-                grid.appendChild(div); if (idx === 0) div.click();
-            });
-        }
-    });
-    document.getElementById('wega-results-container').classList.remove('hidden');
-}
-
-function calculateBudgetTotal() {
-    const items = document.getElementById('budget-items'); items.innerHTML = '';
-    let tot = 0;
-    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { if (currentSelection[t]) { const p = currentSelection[t].price * 1.6; tot += p; items.innerHTML += `<p><span>${t.toUpperCase()} (${currentSelection[t].code})</span> <span>$${p.toFixed(0)}</span></p>`; } });
-    const lits = parseFloat(document.getElementById('budget-oil-liters').value) || 0;
-    if (currentSelection.oil_price_l && lits > 0) { const c = currentSelection.oil_price_l * lits; tot += c; items.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${lits}L)</span> <span>$${c.toFixed(0)}</span></p>`; }
-    const labor = parseFloat(document.getElementById('budget-labor').value) || 0;
-    if (labor > 0) { tot += labor; items.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(0)}</span></p>`; }
-    document.getElementById('budget-total').innerHTML = `<h3>Total: $${tot.toFixed(0)}</h3>`;
-    document.getElementById('budget-result').classList.remove('hidden');
-}
-
-async function loadCustomVehicles() {
-    if (!client) return;
-    const { data } = await client.from('datos_taller_ro').select('*').eq('category', 'vehicle_config');
-    if (data) data.forEach(row => { const v = JSON.parse(row.vehicle); VEHICLE_DB[v.id || row.id] = v; });
 }
 
 init();
