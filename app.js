@@ -139,16 +139,61 @@ function renderSales() {
     if (!tT || !tL) return;
     tT.innerHTML = ''; tL.innerHTML = '';
     let totT = 0, totL = 0;
-    sales.sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(s => {
+    
+    // Ordenar por fecha descendente
+    const sortedSales = [...sales].sort((a,b) => new Date(b.date) - new Date(a.date));
+    
+    sortedSales.forEach((s, index) => {
         const tr = document.createElement('tr');
         const d = new Date(s.date).toLocaleString('es-AR', { dateStyle:'short', timeStyle:'short' });
-        const currentId = s.item_id || s.id;
-        tr.innerHTML = `<td>${d}</td><td><strong>${s.name}</strong></td><td>$${s.price.toFixed(2)}</td><td><button style="color:red; border:none; background:none; cursor:pointer;" onclick="deleteSale('${currentId}', '${s.date}')">Anular</button></td>`;
+        
+        tr.innerHTML = `
+            <td>${d}</td>
+            <td><strong>${s.name}</strong></td>
+            <td>$${s.price.toFixed(2)}</td>
+            <td>
+                <button style="color:red; border:none; background:none; cursor:pointer;" class="btn-anular" data-index="${index}">Anular</button>
+            </td>`;
+            
+        // Usar evento directo para evitar problemas de caracteres
+        tr.querySelector('.btn-anular').onclick = () => deleteSaleByObject(s);
+
         if (s.category === 'turbos') { totT += s.price; tT.appendChild(tr); }
         else { totL += s.price; tL.appendChild(tr); }
     });
+    
     document.getElementById('total-sales-turbos').innerText = `$${totT.toFixed(2)}`;
     document.getElementById('total-sales-lubricentro').innerText = `$${totL.toFixed(2)}`;
+}
+
+async function deleteSaleByObject(saleObj) {
+    if (!confirm(`¿Anular venta de "${saleObj.name}" por $${saleObj.price}?`)) return;
+    
+    // Buscar el objeto exacto en el array original
+    const idx = sales.indexOf(saleObj);
+    if (idx > -1) {
+        const s = sales[idx];
+        const actualId = s.item_id || s.id;
+        
+        // Devolver stock
+        const item = inventory[s.category].find(i => i.id === actualId);
+        if (item) item.stock++;
+        
+        // Borrar de la nube
+        if (client) {
+            await client.from('ventas_taller_ro')
+                .delete()
+                .eq('item_id', actualId)
+                .eq('date', s.date);
+        }
+        
+        // Borrar local y guardar
+        sales.splice(idx, 1);
+        await saveData();
+        renderAll();
+    } else {
+        alert("Error: No se pudo localizar la venta.");
+    }
 }
 
 function openEditModal(cat, index) {
@@ -233,7 +278,12 @@ function setupPOS() {
                 const div = document.createElement('div'); div.className = 'suggestion-item'; div.innerText = r.item.name;
                 div.onclick = () => {
                     const p = r.item; const c = p.price; const d = c * DEBIT_PERCENT; const cr = c * CREDIT_PERCENT;
-                    document.getElementById('pos-selected-info').innerHTML = `<div class="pos-card"><strong>${p.name}</strong><div class="pos-prices"><div class="price-tag cash"><span>Efectivo</span><span>$${c.toFixed(2)}</span><button onclick="completeSale('${r.cat}', ${r.index}, ${c}, 'Efectivo')">Vender</button></div><div class="price-tag debit"><span>Débito</span><span>$${d.toFixed(2)}</span><button onclick="completeSale('${r.cat}', ${r.index}, ${d}, 'Débito')">Vender</button></div><div class="price-tag credit"><span>Crédito</span><span>$${cr.toFixed(2)}</span><button onclick="completeSale('${r.cat}', ${r.index}, ${cr}, 'Crédito')">Vender</button></div></div></div>`;
+                    document.getElementById('pos-selected-info').innerHTML = `<div class="pos-card"><strong>${p.name}</strong><div class="pos-prices"><div class="price-tag cash"><span>Efectivo</span><span>$${c.toFixed(2)}</span><button class="btn-vender" data-method="Efectivo" data-price="${c}">Vender</button></div><div class="price-tag debit"><span>Débito</span><span>$${d.toFixed(2)}</span><button class="btn-vender" data-method="Débito" data-price="${d}">Vender</button></div><div class="price-tag credit"><span>Crédito</span><span>$${cr.toFixed(2)}</span><button class="btn-vender" data-method="Crédito" data-price="${cr}">Vender</button></div></div></div>`;
+                    
+                    document.querySelectorAll('.btn-vender').forEach(btn => {
+                        btn.onclick = () => completeSale(r.cat, r.index, parseFloat(btn.dataset.price), btn.dataset.method);
+                    });
+                    
                     input.value = ''; sugg.classList.add('hidden');
                 };
                 sugg.appendChild(div);
@@ -244,29 +294,17 @@ function setupPOS() {
 
 async function completeSale(cat, index, price, method) {
     const item = inventory[cat][index]; if (item.stock <= 0) return alert("Sin stock");
-    item.stock--; sales.push({ id: item.id, item_id: item.id, name: item.name, category: cat, price, date: new Date().toISOString() });
+    item.stock--; 
+    const newSale = { 
+        id: item.id, 
+        item_id: item.id, 
+        name: `${item.name} (${method})`, 
+        category: cat, 
+        price: price, 
+        date: new Date().toISOString() 
+    };
+    sales.push(newSale);
     await saveData(); renderAll(); document.getElementById('pos-selected-info').innerHTML = '<div class="status-badge">✅ Vendido</div>';
-}
-
-async function deleteSale(id, date) {
-    if (!confirm("¿Seguro que deseas anular esta venta? El stock volverá a sumarse.")) return;
-    const idx = sales.findIndex(s => (s.id === id || s.item_id === id) && s.date === date);
-    if (idx > -1) {
-        const s = sales[idx];
-        const actualId = s.id || s.item_id;
-        const item = inventory[s.category].find(i => i.id === actualId);
-        if (item) {
-            item.stock++;
-        }
-        if (client) {
-            await client.from('ventas_taller_ro').delete().eq('item_id', actualId).eq('date', date);
-        }
-        sales.splice(idx, 1);
-        await saveData();
-        renderAll();
-    } else {
-        alert("No se pudo encontrar la venta para anular.");
-    }
 }
 
 function setupTabs() {
