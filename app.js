@@ -83,13 +83,7 @@ async function syncWithCloud(manual = false) {
             for (let i = 0; i < all.length; i += 500) await client.from('datos_taller_ro').insert(all.slice(i, i + 500));
         }
         if (sales.length > 0) {
-            const syncSales = sales.map(s => ({ 
-                item_id: s.item_id || s.id, 
-                name: s.name, 
-                category: s.category, 
-                price: s.price, 
-                date: s.date 
-            }));
+            const syncSales = sales.map(s => ({ item_id: s.item_id || s.id, name: s.name, category: s.category, price: s.price, date: s.date }));
             await client.from('ventas_taller_ro').upsert(syncSales);
         }
         if (manual) alert("✅ Nube sincronizada");
@@ -139,57 +133,27 @@ function renderSales() {
     if (!tT || !tL) return;
     tT.innerHTML = ''; tL.innerHTML = '';
     let totT = 0, totL = 0;
-    
-    // Crear una copia para mostrar pero trabajar con los índices originales
-    sales.forEach((s, originalIndex) => {
+    const sortedSales = [...sales].sort((a,b) => new Date(b.date) - new Date(a.date));
+    sortedSales.forEach((s) => {
         const tr = document.createElement('tr');
         const d = new Date(s.date).toLocaleString('es-AR', { dateStyle:'short', timeStyle:'short' });
-        
-        tr.innerHTML = `
-            <td>${d}</td>
-            <td><strong>${s.name}</strong></td>
-            <td>$${s.price.toFixed(2)}</td>
-            <td>
-                <button style="color:red; border:none; background:none; cursor:pointer; font-weight:bold;" onclick="anularVentaFinal(${originalIndex})">Anular</button>
-            </td>`;
-
+        tr.innerHTML = `<td>${d}</td><td><strong>${s.name}</strong></td><td>$${s.price.toFixed(2)}</td><td><button style="color:red; border:none; background:none; cursor:pointer;" class="btn-anular">Anular</button></td>`;
+        tr.querySelector('.btn-anular').onclick = () => anularVentaFinal(sales.indexOf(s));
         if (s.category === 'turbos') { totT += s.price; tT.appendChild(tr); }
         else { totL += s.price; tL.appendChild(tr); }
     });
-    
     document.getElementById('total-sales-turbos').innerText = `$${totT.toFixed(2)}`;
     document.getElementById('total-sales-lubricentro').innerText = `$${totL.toFixed(2)}`;
 }
 
 async function anularVentaFinal(index) {
-    const s = sales[index];
-    if (!s) return;
-
-    if (!confirm(`¿ANULAR VENTA?\n\nProducto: ${s.name}\nPrecio: $${s.price}\n\nEl stock se devolverá automáticamente.`)) return;
-
+    const s = sales[index]; if (!s) return;
+    if (!confirm(`¿ANULAR VENTA DE ${s.name}?`)) return;
     const actualId = s.item_id || s.id;
-    
-    // 1. Devolver Stock
     const item = inventory[s.category].find(i => i.id === actualId);
     if (item) item.stock++;
-
-    // 2. Borrar de la NUBE (Supabase)
-    if (client) {
-        try {
-            const { error } = await client.from('ventas_taller_ro')
-                .delete()
-                .match({ item_id: actualId, date: s.date });
-            if (error) console.warn("Error nube:", error);
-        } catch (e) { console.error(e); }
-    }
-
-    // 3. Borrar de la LISTA LOCAL
-    sales.splice(index, 1);
-
-    // 4. Guardar y Refrescar
-    await saveData();
-    renderAll();
-    alert("Venta anulada con éxito.");
+    if (client) await client.from('ventas_taller_ro').delete().match({ item_id: actualId, date: s.date });
+    sales.splice(index, 1); await saveData(); renderAll(); alert("Anulada");
 }
 
 function openEditModal(cat, index) {
@@ -248,14 +212,34 @@ async function handleImport(event, category) {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
-            let col = category === 'turbos' ? { id:1, name:2, vehicle:3, stock:6, price:7 } : { id:1, name:2, price:3, stock:6 };
+            
+            // MAPEO SEGÚN CAPTURAS DE GOOGLE SHEETS
+            // Turbos: A:Tipo(0), B:ID(1), C:Modelo(2), D:Vehiculo(3), G:Stock(6), H:Precio(7)
+            // Lubricentro: A:Tipo(0), B:ID(1), C:Nombre(2), E:Precio(4), H:Stock(7)
+            let col = category === 'turbos' 
+                ? { type:0, id:1, name:2, vehicle:3, stock:6, price:7 } 
+                : { type:0, id:1, name:2, price:4, stock:7 };
+
             const items = [];
             for (let i = 1; i < json.length; i++) {
-                const r = json[i]; if (!r[col.id]) continue;
-                items.push({ id: r[col.id].toString(), name: (r[col.name]||'S/N').toString(), vehicle: col.vehicle ? (r[col.vehicle]||'').toString() : '', price: parseFloat(r[col.price])||0, stock: parseInt(r[col.stock])||0, category });
+                const r = json[i]; 
+                if (!r[col.id]) continue;
+                
+                items.push({ 
+                    id: r[col.id].toString(), 
+                    type: (r[col.type] || '').toString(),
+                    name: (r[col.name] || 'S/N').toString(), 
+                    vehicle: col.vehicle ? (r[col.vehicle] || '').toString() : '', 
+                    price: parseFloat(r[col.price]) || 0, 
+                    stock: parseInt(r[col.stock]) || 0, 
+                    category 
+                });
             }
-            inventory[category] = items; await saveData(); renderAll(); alert("Éxito");
-        } catch (err) { alert("Error"); }
+            inventory[category] = items; 
+            await saveData(); 
+            renderAll(); 
+            alert("✅ Importación Exitosa");
+        } catch (err) { alert("Error al importar"); }
     };
     reader.readAsArrayBuffer(file);
 }
@@ -286,16 +270,8 @@ function setupPOS() {
 async function completeSale(cat, index, price, method) {
     const item = inventory[cat][index]; if (item.stock <= 0) return alert("Sin stock");
     item.stock--; 
-    const newSale = { 
-        id: item.id, 
-        item_id: item.id, 
-        name: `${item.name} (${method})`, 
-        category: cat, 
-        price: price, 
-        date: new Date().toISOString() 
-    };
-    sales.push(newSale);
-    await saveData(); renderAll(); document.getElementById('pos-selected-info').innerHTML = '<div class="status-badge">✅ Vendido</div>';
+    sales.push({ id: item.id, item_id: item.id, name: `${item.name} (${method})`, category: cat, price, date: new Date().toISOString() });
+    await saveData(); renderAll();
 }
 
 function setupTabs() {
@@ -316,32 +292,20 @@ async function loadWegaExcel() {
     const status = document.getElementById('wega-status'); if (!status) return;
     try {
         const res = await fetch('precios_limpios.xlsx');
-        if (!res.ok) throw new Error("No se encontró el archivo");
-        const data = await res.arrayBuffer();
-        processWegaData(data);
+        if (!res.ok) throw new Error("No se encontró");
+        const data = await res.arrayBuffer(); processWegaData(data);
         status.innerText = "✅ Lista Lista"; status.style.background = "#dcfce7";
-    } catch (e) { 
-        status.innerText = "⚠️ Subir Excel"; 
-        status.style.background = "#fef3c7";
-    }
+    } catch (e) { status.innerText = "⚠️ Subir Excel"; status.style.background = "#fef3c7"; }
 }
 
 function setupWegaManualImport() {
     const input = document.getElementById('import-wega-manual');
     if (input) {
         input.onchange = (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+            const file = e.target.files[0]; if (!file) return;
             const reader = new FileReader();
             reader.onload = (event) => {
-                try {
-                    processWegaData(event.target.result);
-                    alert("✅ Lista de filtros actualizada correctamente (" + wegaData.length + " filtros cargados)");
-                    document.getElementById('wega-status').innerText = "✅ Lista Lista";
-                    document.getElementById('wega-status').style.background = "#dcfce7";
-                } catch (err) {
-                    alert("Error al procesar el Excel. Revisa que tenga las columnas Filtros, Codigo, Descripcion, Precio.");
-                }
+                try { processWegaData(event.target.result); alert("✅ Filtros cargados"); document.getElementById('wega-status').innerText = "✅ Lista Lista"; } catch (err) { alert("Error"); }
             };
             reader.readAsArrayBuffer(file);
         };
@@ -351,177 +315,83 @@ function setupWegaManualImport() {
 function processWegaData(data) {
     const wb = XLSX.read(data);
     const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-    
-    let startIndex = 0;
-    for(let i=0; i<raw.length; i++) {
-        if (raw[i][1] && raw[i][2]) { startIndex = i; break; }
-    }
-
-    wegaData = raw.slice(startIndex).map(row => {
-        let price = parseFloat(row[3]) || 0;
-        if (price > 0 && price < 1000) price = price * 1000;
-        
-        return {
-            category: (row[0] || '').toString().toUpperCase(),
-            code: (row[1] || '').toString().toUpperCase(),
-            desc: (row[2] || '').toString(),
-            price: price
-        };
+    let start = 0; for(let i=0; i<raw.length; i++) { if (raw[i][1] && raw[i][2]) { start = i; break; } }
+    wegaData = raw.slice(start).map(row => {
+        let p = parseFloat(row[3]) || 0; if (p > 0 && p < 1000) p = p * 1000;
+        return { category: (row[0] || '').toString().toUpperCase(), code: (row[1] || '').toString().toUpperCase(), desc: (row[2] || '').toString(), price: p };
     }).filter(item => item.code && item.desc);
 }
 
 function updateOilSelect() {
-    const select = document.getElementById('budget-oil-select');
-    if (!select) return;
-    const currentVal = select.value;
+    const select = document.getElementById('budget-oil-select'); if (!select) return;
     select.innerHTML = '<option value="">-- Seleccionar Aceite --</option>';
-    
-    if (inventory.lubricentro.length === 0) {
-        select.innerHTML = '<option value="">⚠️ No hay aceites en Inventario</option>';
-        return;
-    }
-
+    if (inventory.lubricentro.length === 0) return;
     inventory.lubricentro.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item.id;
-        option.innerText = `${item.name} ($${item.price}/L)`;
-        if (item.id === currentVal) option.selected = true;
-        select.appendChild(option);
+        const option = document.createElement('option'); option.value = item.id; option.innerText = `${item.name} ($${item.price}/L)`; select.appendChild(option);
     });
 }
 
 function setupBudget() {
-    const btnSearch = document.getElementById('btn-search-budget');
-    const btnSave = document.getElementById('btn-save-vehicle');
-    const btnWA = document.getElementById('btn-whatsapp');
-    const laborInput = document.getElementById('budget-labor');
-
-    btnSearch.onclick = () => {
-        const query = document.getElementById('budget-search').value.toLowerCase().trim();
-        if (query.length < 3) return alert("Escriba marca y modelo (ej: Palio 1.4)");
-        
+    document.getElementById('btn-search-budget').onclick = () => {
+        const q = document.getElementById('budget-search').value.toLowerCase().trim();
+        if (q.length < 3) return alert("Escriba marca y modelo");
         currentSelection = { oil: null, air: null, fuel: null, cabin: null };
         document.querySelectorAll('.config-item strong').forEach(el => el.innerText = '-');
-
-        searchInWega(query);
+        searchInWega(q);
     };
-
-    laborInput.oninput = () => calculateBudgetTotal();
+    document.getElementById('budget-labor').oninput = () => calculateBudgetTotal();
     document.getElementById('budget-oil-liters').oninput = () => calculateBudgetTotal();
-    document.getElementById('budget-oil-select').onchange = () => {
-        const select = document.getElementById('budget-oil-select');
-        const oilId = select.value;
-        const oilProd = inventory.lubricentro.find(i => i.id === oilId);
-        if (oilProd) {
-            currentSelection.oil_price_l = oilProd.price;
-            currentSelection.oil_name = oilProd.name;
-        } else {
-            currentSelection.oil_price_l = 0;
-            currentSelection.oil_name = null;
-        }
+    document.getElementById('budget-oil-select').onchange = (e) => {
+        const oil = inventory.lubricentro.find(i => i.id === e.target.value);
+        if (oil) { currentSelection.oil_price_l = oil.price; currentSelection.oil_name = oil.name; }
         calculateBudgetTotal();
     };
-    btnWA.onclick = () => copyBudgetToWhatsApp();
-    btnSave.onclick = () => saveCurrentVehicleConfig();
 }
 
-function searchInWega(query) {
-    const words = query.split(' ').filter(w => w.length > 1);
-    const resultsContainer = document.getElementById('wega-results-container');
-    const optionsGrid = document.getElementById('wega-options');
-    optionsGrid.innerHTML = '';
-    
-    const categories = {
-        oil: { title: "🛢️ Aceite", filters: [] },
-        air: { title: "🌬️ Aire", filters: [] },
-        fuel: { title: "⛽ Combustible", filters: [] },
-        cabin: { title: "🏠 Habitáculo", filters: [] }
-    };
-
-    let foundAny = false;
+function searchInWega(q) {
+    const words = q.split(' ').filter(w => w.length > 1);
+    const grid = document.getElementById('wega-options'); grid.innerHTML = '';
+    const cats = { oil: { title: "🛢️ Aceite", filters: [] }, air: { title: "🌬️ Aire", filters: [] }, fuel: { title: "⛽ Combustible", filters: [] }, cabin: { title: "🏠 Habitáculo", filters: [] } };
+    let any = false;
     wegaData.forEach(item => {
-        const desc = item.desc.toLowerCase();
-        const catName = item.category.toLowerCase();
-        const code = item.code;
-        
-        if (words.every(w => desc.includes(w))) {
+        const d = item.desc.toLowerCase(); const c = item.code; const cat = item.category.toLowerCase();
+        if (words.every(w => d.includes(w))) {
             let type = null;
-            if (catName.includes('ACEITE') || catName.includes('OIL') || code.startsWith('WEO') || code.startsWith('WO')) type = 'oil';
-            else if (catName.includes('AIRE') || catName.includes('AIR') || code.startsWith('FAP') || code.startsWith('WAP')) type = 'air';
-            else if (catName.includes('COMBUSTIBLE') || catName.includes('FUEL') || catName.includes('DIESEL') || code.startsWith('FCI') || code.startsWith('FCD') || code.startsWith('FCE')) type = 'fuel';
-            else if (catName.includes('HABITACULO') || catName.includes('POLEN') || catName.includes('CABIN') || code.startsWith('AKX')) type = 'cabin';
-            
-            if (type) {
-                categories[type].filters.push({ code, desc: item.desc, price: item.price });
-                foundAny = true;
-            }
+            if (cat.includes('ACEITE') || c.startsWith('WEO')) type = 'oil';
+            else if (cat.includes('AIRE') || c.startsWith('FAP')) type = 'air';
+            else if (cat.includes('COMBUSTIBLE') || cat.includes('DIESEL') || c.startsWith('FCI')) type = 'fuel';
+            else if (cat.includes('HABITACULO') || c.startsWith('AKX')) type = 'cabin';
+            if (type) { cats[type].filters.push({ code: c, desc: item.desc, price: item.price }); any = true; }
         }
     });
-
-    if (!foundAny) {
-        optionsGrid.innerHTML = '<p style="padding:10px; color:red;">No se encontraron filtros para esa búsqueda.</p>';
-    } else {
-        Object.keys(categories).forEach(type => {
-            const cat = categories[type];
-            if (cat.filters.length > 0) {
-                const header = document.createElement('h5'); header.innerText = cat.title;
-                optionsGrid.appendChild(header);
-                cat.filters.slice(0, 5).forEach((f, idx) => {
-                    const item = document.createElement('div');
-                    item.className = 'option-item';
-                    item.innerHTML = `<strong>${f.code}</strong><small>${f.desc}</small><div style="color:var(--primary); font-weight:bold;">$${(f.price * 1.6).toFixed(0)}</div>`;
-                    item.onclick = () => selectFilter(type, f);
-                    optionsGrid.appendChild(item);
-                    if (idx === 0) selectFilter(type, f);
-                });
-            }
-        });
-    }
-
-    resultsContainer.classList.remove('hidden');
-}
-
-function selectFilter(type, filter) {
-    currentSelection[type] = filter;
-    document.getElementById(`sel-${type}`).innerText = filter.code;
-    calculateBudgetTotal();
+    if (!any) grid.innerHTML = '<p>No se encontraron filtros.</p>';
+    else Object.keys(cats).forEach(t => {
+        if (cats[t].filters.length > 0) {
+            const h = document.createElement('h5'); h.innerText = cats[t].title; grid.appendChild(h);
+            cats[t].filters.slice(0, 5).forEach((f, idx) => {
+                const div = document.createElement('div'); div.className = 'option-item';
+                div.innerHTML = `<strong>${f.code}</strong><small>${f.desc}</small><div>$${(f.price * 1.6).toFixed(0)}</div>`;
+                div.onclick = () => { currentSelection[t] = f; document.getElementById(`sel-${t}`).innerText = f.code; calculateBudgetTotal(); };
+                grid.appendChild(div); if (idx === 0) div.click();
+            });
+        }
+    });
+    document.getElementById('wega-results-container').classList.remove('hidden');
 }
 
 function calculateBudgetTotal() {
-    const itemsDiv = document.getElementById('budget-items');
-    const totalDiv = document.getElementById('budget-total');
-    const resultCard = document.getElementById('budget-result');
-    
-    itemsDiv.innerHTML = '';
-    let total = 0;
-
-    Object.keys(currentSelection).forEach(type => {
-        const f = currentSelection[type];
-        if (f && type !== 'oil_liters' && type !== 'oil_price_l' && type !== 'oil_name') {
-            const price = f.price * 1.6;
-            total += price;
-            itemsDiv.innerHTML += `<p><span>${type.toUpperCase()} (${f.code})</span> <span>$${price.toFixed(0)}</span></p>`;
-        }
-    });
-
-    const oilLiters = parseFloat(document.getElementById('budget-oil-liters').value) || 0;
-    if (currentSelection.oil_price_l && oilLiters > 0) {
-        const cost = currentSelection.oil_price_l * oilLiters;
-        total += cost;
-        itemsDiv.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${oilLiters}L)</span> <span>$${cost.toFixed(0)}</span></p>`;
-    }
-
+    const items = document.getElementById('budget-items'); items.innerHTML = '';
+    let tot = 0;
+    ['oil', 'air', 'fuel', 'cabin'].forEach(t => { if (currentSelection[t]) { const p = currentSelection[t].price * 1.6; tot += p; items.innerHTML += `<p><span>${t.toUpperCase()} (${currentSelection[t].code})</span> <span>$${p.toFixed(0)}</span></p>`; } });
+    const lits = parseFloat(document.getElementById('budget-oil-liters').value) || 0;
+    if (currentSelection.oil_price_l && lits > 0) { const c = currentSelection.oil_price_l * lits; tot += c; items.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${lits}L)</span> <span>$${c.toFixed(0)}</span></p>`; }
     const labor = parseFloat(document.getElementById('budget-labor').value) || 0;
-    if (labor > 0) {
-        total += labor;
-        itemsDiv.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(0)}</span></p>`;
-    }
-
-    totalDiv.innerHTML = `<h3>Total: $${total.toFixed(0)}</h3>`;
-    resultCard.classList.remove('hidden');
+    if (labor > 0) { tot += labor; items.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(0)}</span></p>`; }
+    document.getElementById('budget-total').innerHTML = `<h3>Total: $${tot.toFixed(0)}</h3>`;
+    document.getElementById('budget-result').classList.remove('hidden');
 }
 
-async function saveCustomVehicles() {
+async function loadCustomVehicles() {
     if (!client) return;
     const { data } = await client.from('datos_taller_ro').select('*').eq('category', 'vehicle_config');
     if (data) data.forEach(row => { const v = JSON.parse(row.vehicle); VEHICLE_DB[v.id || row.id] = v; });
