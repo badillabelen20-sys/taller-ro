@@ -4,138 +4,295 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>App Oficial - Taller de Turbos y Lubricentro</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- Supabase SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root { --primary: #0f172a; --accent: #0ea5e9; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
-        body { background-color: var(--bg); color: var(--text); padding-bottom: 50px; }
-        header { background: var(--primary); color: white; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 100; }
-        .logo { font-size: 1.5rem; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-        
-        .tabs { display: flex; background: white; padding: 0.5rem; gap: 10px; overflow-x: auto; position: sticky; top: 60px; z-index: 99; border-bottom: 1px solid #e2e8f0; }
-        .tab-btn { padding: 0.8rem 1.5rem; border: none; background: #f1f5f9; border-radius: 8px; cursor: pointer; font-weight: 600; white-space: nowrap; transition: 0.3s; }
-        .tab-btn.active { background: var(--accent); color: white; }
-
-        .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; animation: fadeIn 0.3s; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-
-        .card { background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 2rem; }
-        h2 { margin-bottom: 1.5rem; font-size: 1.25rem; display: flex; align-items: center; gap: 10px; }
-
-        .search-box { display: flex; gap: 10px; margin-bottom: 1.5rem; }
-        input, select { flex: 1; padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 8px; outline: none; }
-        button { padding: 0.8rem 1.5rem; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; transition: 0.2s; display: flex; align-items: center; gap: 8px; }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-accent { background: var(--accent); color: white; }
-        .btn-success { background: #22c55e; color: white; }
-
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem; }
-        th, td { padding: 1rem; text-align: left; border-bottom: 1px solid #f1f5f9; }
-        th { background: #f8fafc; color: #64748b; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
-        
-        #login-screen { position: fixed; inset: 0; background: var(--bg); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 1rem; }
-        .login-card { background: white; padding: 2.5rem; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
-        .hidden { display: none !important; }
-
-        .budget-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
-        .option-item { padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; margin-bottom: 8px; transition: 0.2s; }
-        .option-item:hover { border-color: var(--accent); background: #f0f9ff; }
-        .config-item { background: #f8fafc; padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; }
-        .total-box { background: var(--primary); color: white; padding: 20px; border-radius: 12px; text-align: center; margin-top: 20px; }
-        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1001; }
-        @media (max-width: 768px) { .budget-grid { grid-template-columns: 1fr; } .search-box { flex-direction: column; } }
-    </style>
 </head>
 <body>
-
-    <div id="login-screen">
+    <!-- Pantalla de Login (Se muestra por defecto) -->
+    <div id="login-screen" class="login-overlay">
         <div class="login-card">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">💧💨</div>
-            <h1>Acceso al Taller</h1>
-            <p style="color: #64748b; margin-bottom: 2rem;">Ingresa tus credenciales</p>
+            <div class="login-logo">💧💨</div>
+            <h2>Acceso al Taller</h2>
+            <p>Ingresa tus credenciales para continuar</p>
             <form id="login-form">
-                <input type="email" id="login-email" placeholder="Email" required style="margin-bottom: 1rem; width: 100%;">
-                <input type="password" id="login-password" placeholder="Contraseña" required style="margin-bottom: 1.5rem; width: 100%;">
-                <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">Entrar al Sistema</button>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="login-email" placeholder="tu@email.com" required>
+                </div>
+                <div class="form-group">
+                    <label>Contraseña</label>
+                    <input type="password" id="login-password" placeholder="••••••••" required>
+                </div>
+                <button type="submit" class="btn btn-add" style="width: 100%; margin-top: 1rem; background-color: #1f2937;">Entrar al Sistema</button>
             </form>
+            <p id="login-error" class="error-text hidden">Credenciales incorrectas. Intenta de nuevo.</p>
         </div>
     </div>
-
-    <header>
-        <div class="logo">💧💨 Taller & Lubricentro</div>
-        <div style="display: flex; gap: 15px; align-items: center;">
-            <button class="btn-success" onclick="syncWithCloud(true)">🔍 Sincronizar Nube</button>
-            <button id="logout-btn" style="background: none; color: white; font-size: 1.5rem; border: none; cursor: pointer;">✕</button>
+    <header class="header">
+        <div class="logo">
+            <span class="logo-icon">💧💨</span>
+            <h1>Taller & Lubricentro</h1>
         </div>
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="turbos">Turbos</button>
+            <button class="tab-btn" data-tab="lubricentro">Lubricentro</button>
+            <button class="tab-btn" data-tab="ventas-turbos">Libro Turbos</button>
+            <button class="tab-btn" data-tab="ventas-lubricentro">Libro Lubricentro</button>
+            <button class="tab-btn" data-tab="presupuesto">📋 Presupuesto</button>
+            <button id="sync-btn" class="btn btn-sell" style="background: #10b981; margin-left: 10px;" onclick="syncWithCloud(true)">🔄 Sincronizar Nube</button>
+            <button id="logout-btn" class="btn-logout" title="Cerrar Sesión">❌</button>
+        </nav>
     </header>
 
-    <div class="tabs">
-        <button class="tab-btn active" data-tab="turbos">Turbos</button>
-        <button class="tab-btn" data-tab="lubricentro">Lubricentro</button>
-        <button class="tab-btn" data-tab="libro-turbos">Libro Turbos</button>
-        <button class="tab-btn" data-tab="libro-lubricentro">Libro Lubricentro</button>
-        <button class="tab-btn" data-tab="presupuesto">📋 Presupuesto</button>
-    </div>
+    <main class="container">
+        <!-- Panel de Punto de Venta Rápido -->
+        <section class="pos-panel">
+            <h2>Punto de Venta Rápido</h2>
+            <div class="pos-controls">
+                <input type="text" id="pos-search" placeholder="Buscar producto para vender (ej. Filtro, T001)..." autocomplete="off">
+                <div id="pos-suggestions" class="suggestions-box hidden"></div>
+                <button id="pos-sell-btn" class="btn btn-sell" disabled>Vender 1 Unidad</button>
+            </div>
+            <p id="pos-selected-info" class="selected-info">Ningún producto seleccionado</p>
+        </section>
 
-    <div class="container">
-        <div id="turbos" class="tab-content active"><div class="card"><h2>Inventario de Turbos</h2><div style="display:flex; gap:10px; margin-bottom:1rem;"><label class="btn-primary" style="cursor:pointer; padding:10px;">📥 Importar Excel<input type="file" id="import-turbos" hidden></label><button class="btn-accent" onclick="openAddModal('turbos')">+ Nuevo Turbo</button></div><input type="text" id="search-turbos" placeholder="Buscar..." style="width:100%"><table id="table-turbos"><thead><tr><th>Tipo</th><th>Código</th><th>Modelo</th><th>Vehículo</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr></thead><tbody></tbody></table></div></div>
-        <div id="lubricentro" class="tab-content"><div class="card"><h2>Inventario de Lubricentro</h2><div style="display:flex; gap:10px; margin-bottom:1rem;"><label class="btn-primary" style="cursor:pointer; padding:10px;">📥 Importar Excel<input type="file" id="import-lubricentro" hidden></label><button class="btn-accent" onclick="openAddModal('lubricentro')">+ Nuevo Producto</button></div><div class="card" style="background:#f1f5f9"><h3>Venta Rápida</h3><input type="text" id="pos-search" placeholder="Buscar para vender..."><div id="pos-suggestions" class="hidden" style="background:white; border:1px solid #ccc; max-height:200px; overflow-y:auto;"></div><div id="pos-selected-info"></div></div><input type="text" id="search-lubricentro" placeholder="Buscar..." style="width:100%"><table id="table-lubricentro"><thead><tr><th>Tipo</th><th>Código</th><th>Artículo</th><th>Precio</th><th>Stock</th><th>Acciones</th></tr></thead><tbody></tbody></table></div></div>
-        <div id="libro-turbos" class="tab-content"><div class="card"><div style="display:flex; justify-content:space-between"><h2>Libro Diario Turbos</h2><h3 id="total-sales-turbos">$0.00</h3></div><table id="table-ventas-turbos"><thead><tr><th>Fecha</th><th>Producto</th><th>Precio</th><th>Acciones</th></tr></thead><tbody></tbody></table></div></div>
-        <div id="libro-lubricentro" class="tab-content"><div class="card"><div style="display:flex; justify-content:space-between"><h2>Libro Diario Lubricentro</h2><h3 id="total-sales-lubricentro">$0.00</h3></div><table id="table-ventas-lubricentro"><thead><tr><th>Fecha</th><th>Producto</th><th>Precio</th><th>Acciones</th></tr></thead><tbody></tbody></table></div></div>
-        <div id="presupuesto" class="tab-content">
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                    <h2>📋 Presupuesto Inteligente</h2>
-                    <div style="display:flex; gap:10px;">
-                        <label style="background:#f1f5f9; padding:8px; border-radius:8px; cursor:pointer;">📥 Actualizar Filtros<input type="file" id="import-wega-manual" hidden></label>
-                        <span id="wega-status" class="sync-badge">Cargando...</span>
+        <!-- Tab Turbos -->
+        <section id="turbos" class="tab-content active">
+            <div class="tab-header">
+                <h2>Inventario de Turbos</h2>
+                <div>
+                    <label class="btn btn-outline" style="cursor:pointer; margin-right: 10px;">
+                        📥 Importar Excel
+                        <input type="file" id="import-turbos" accept=".xlsx, .xls" style="display:none;">
+                    </label>
+                    <button class="btn btn-add" onclick="openAddModal('turbos')">+ Nuevo Turbo</button>
+                </div>
+            </div>
+            <input type="text" class="search-bar" id="search-turbos" placeholder="Buscar por código, modelo o vehículo...">
+            
+            <div class="table-container">
+                <table id="table-turbos">
+                    <thead>
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Código</th>
+                            <th>Modelo</th>
+                            <th>Vehículo</th>
+                            <th>Precio</th>
+                            <th>Stock</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Filas de turbos generadas por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Tab Lubricentro -->
+        <section id="lubricentro" class="tab-content">
+            <div class="tab-header">
+                <h2>Inventario de Lubricentro</h2>
+                <div>
+                    <label class="btn btn-outline" style="cursor:pointer; margin-right: 10px;">
+                        📥 Importar Excel
+                        <input type="file" id="import-lubricentro" accept=".xlsx, .xls" style="display:none;">
+                    </label>
+                    <button class="btn btn-add" onclick="openAddModal('lubricentro')">+ Nuevo Producto</button>
+                </div>
+            </div>
+            <input type="text" class="search-bar" id="search-lubricentro" placeholder="Buscar por código o nombre...">
+            
+            <div class="table-container">
+                <table id="table-lubricentro">
+                    <thead>
+                        <tr>
+                            <th>Tipo</th>
+                            <th>Código</th>
+                            <th>Artículo</th>
+                            <th>Precio</th>
+                            <th>Stock</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Filas de lubricentro generadas por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Tab Libro Turbos -->
+        <section id="ventas-turbos" class="tab-content">
+            <div class="tab-header">
+                <h2>Libro Diario: Turbos</h2>
+                <div class="sales-summary">
+                    <span style="font-size: 1.1rem; color: var(--primary-red);">Total Turbos: <strong id="total-sales-turbos">$0.00</strong></span>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="table-ventas-turbos">
+                    <thead>
+                        <tr>
+                            <th>Fecha y Hora</th>
+                            <th>Producto</th>
+                            <th>Precio</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Filas de ventas generadas por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Tab Libro Lubricentro -->
+        <section id="ventas-lubricentro" class="tab-content">
+            <div class="tab-header">
+                <h2>Libro Diario: Lubricentro</h2>
+                <div class="sales-summary">
+                    <span style="font-size: 1.1rem; color: var(--primary-red);">Total Lubricentro: <strong id="total-sales-lubricentro">$0.00</strong></span>
+                </div>
+            </div>
+            <div class="table-container">
+                <table id="table-ventas-lubricentro">
+                    <thead>
+                        <tr>
+                            <th>Fecha y Hora</th>
+                            <th>Producto</th>
+                            <th>Precio</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Filas de ventas generadas por JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        </section>
+
+        <!-- Tab Presupuesto -->
+        <section id="presupuesto" class="tab-content">
+            <div class="tab-header">
+                <h2>📋 Presupuesto Inteligente</h2>
+                <div id="wega-status" class="status-badge">Cargando Lista WEGA...</div>
+            </div>
+            <div class="budget-layout">
+                <div class="budget-panel search-side">
+                    <div class="form-group">
+                        <label>1. Buscar Vehículo</label>
+                        <input type="text" id="budget-search" placeholder="Ej: Fiat Argo 1.3, Hilux 2.8...">
+                        <button class="btn btn-add" id="btn-search-budget" style="width:100%; margin-top:10px;">🔍 Buscar en Catálogo</button>
+                    </div>
+                    
+                    <div id="wega-results-container" class="results-explorer hidden">
+                        <h4>Resultados WEGA (Click para seleccionar)</h4>
+                        <div id="wega-options" class="options-grid"></div>
                     </div>
                 </div>
-                <div class="budget-grid">
-                    <div>
-                        <h4>1. Buscar Vehículo</h4>
-                        <div class="search-box">
-                            <input type="text" id="budget-search" placeholder="Ej: Palio 1.4...">
-                            <button class="btn-primary" id="btn-search-budget">🔍 Buscar</button>
-                            <button onclick="window.open('https://www.wega.com.ar/catalogo', '_blank')" style="background:#64748b; color:white;">🌐 Web Wega</button>
+
+                <div class="budget-panel config-side">
+                    <h4>2. Configuración del Servicio</h4>
+                    <div id="current-config" class="config-card">
+                        <div class="config-item" data-type="oil"><span>🛢️ Aceite:</span> <strong id="sel-oil">-</strong></div>
+                        <div class="config-item" data-type="air"><span>🌬️ Aire:</span> <strong id="sel-air">-</strong></div>
+                        <div class="config-item" data-type="fuel"><span>⛽ Combustible:</span> <strong id="sel-fuel">-</strong></div>
+                        <div class="config-item" data-type="cabin"><span>🏠 Habitáculo:</span> <strong id="sel-cabin">-</strong></div>
+                    </div>
+                    
+                    <div class="form-row" style="margin-top:15px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>Mano de Obra ($)</label>
+                            <input type="number" id="budget-labor" value="0">
                         </div>
-                        <div id="wega-results-container" class="hidden"><h5>Resultados:</h5><div id="wega-options" style="max-height:300px; overflow-y:auto;"></div></div>
                     </div>
-                    <div>
-                        <h4>2. Configuración</h4>
-                        <div class="config-item"><span>🛢️ Aceite:</span> <strong id="sel-oil">-</strong></div>
-                        <div class="config-item"><span>🌬️ Aire:</span> <strong id="sel-air">-</strong></div>
-                        <div class="config-item"><span>⛽ Combustible:</span> <strong id="sel-fuel">-</strong></div>
-                        <div class="config-item"><span>🏠 Habitáculo:</span> <strong id="sel-cabin">-</strong></div>
-                        <label>Elegir Aceite:</label><select id="budget-oil-select" style="width:100%; margin-bottom:10px;"></select>
-                        <div style="display:flex; gap:10px;"><div><label>Litros:</label><input type="number" id="budget-oil-liters" value="4"></div><div><label>Mano Obra:</label><input type="number" id="budget-labor" value="0"></div></div>
-                        <div id="budget-result" class="hidden"><div id="budget-items"></div><div id="budget-total" class="total-box"></div><button id="btn-whatsapp" class="btn-success" style="width:100%; margin-top:10px;">📱 Enviar WhatsApp</button></div>
+
+                    <div id="budget-result" class="calc-result hidden">
+                        <div id="budget-items" class="result-details"></div>
+                        <hr>
+                        <div id="budget-total"></div>
+                        <div class="budget-actions">
+                            <button class="btn btn-save" id="btn-save-vehicle" style="width:100%; margin-bottom:10px;">💾 Guardar este Auto</button>
+                            <button class="btn btn-sell" id="btn-whatsapp" style="width:100%; background:#25D366; color:white; border:none;">📱 WhatsApp</button>
+                        </div>
                     </div>
                 </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal Nuevo Vehículo -->
+    <div id="vehicle-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="v-modal-title">Registrar Nuevo Auto</h2>
+            <div class="form-group">
+                <label>Nombre del Auto (Ej: Fiat Mobi 1.0)</label>
+                <input type="text" id="v-name" placeholder="Marca y Modelo">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Aceite (Ej: 5W30)</label>
+                    <input type="text" id="v-oil-type">
+                </div>
+                <div class="form-group">
+                    <label>Litros</label>
+                    <input type="number" id="v-oil-liters" step="0.1">
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                <div class="form-group"><label>Cód. Filtro Aceite</label><input type="text" id="v-f-oil"></div>
+                <div class="form-group"><label>Cód. Filtro Aire</label><input type="text" id="v-f-air"></div>
+                <div class="form-group"><label>Cód. Filtro Nafta</label><input type="text" id="v-f-fuel"></div>
+                <div class="form-group"><label>Cód. Filtro Polen</label><input type="text" id="v-f-cabin"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeVehicleModal()">Cancelar</button>
+                <button class="btn btn-add" onclick="saveNewVehicle()">Guardar en Lista</button>
             </div>
         </div>
     </div>
 
+    <!-- Modal para agregar producto -->
     <div id="add-modal" class="modal hidden">
-        <div class="card" style="width:100%; max-width:500px;">
-            <h2 id="modal-title">Producto</h2>
+        <div class="modal-content">
+            <h2 id="modal-title">Agregar Producto</h2>
             <form id="add-form">
                 <input type="hidden" id="modal-category">
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
-                    <div><label>Tipo</label><input type="text" id="input-type"></div>
-                    <div><label>Código</label><input type="text" id="input-code" required></div>
+                <div class="form-group" id="group-type">
+                    <label>Tipo</label>
+                    <input type="text" id="input-type" placeholder="Ej: Nuevo, Reparado...">
                 </div>
-                <div style="margin-bottom:10px;"><label>Nombre</label><input type="text" id="input-name" required></div>
-                <div id="group-vehicle" style="display:none; margin-bottom:10px;"><label>Vehículo</label><input type="text" id="input-vehicle"></div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px;">
-                    <div><label>Precio</label><input type="number" id="input-price" step="0.01" required></div>
-                    <div><label>Stock</label><input type="number" id="input-stock" required></div>
+                <div class="form-group">
+                    <label>Código</label>
+                    <input type="text" id="input-code" placeholder="Ej: T001" required>
                 </div>
-                <div style="display:flex; gap:10px; justify-content:flex-end;"><button type="button" onclick="closeAddModal()" style="background:#e2e8f0;">Cancelar</button><button type="submit" class="btn-primary">Guardar</button></div>
+                <div class="form-group">
+                    <label>Nombre / Modelo</label>
+                    <input type="text" id="input-name" required>
+                </div>
+                <div class="form-group" id="group-vehicle">
+                    <label>Vehículo (Solo Turbos)</label>
+                    <input type="text" id="input-vehicle">
+                </div>
+                <div class="form-group">
+                    <label>Precio ($)</label>
+                    <input type="number" id="input-price" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Stock Inicial</label>
+                    <input type="number" id="input-stock" value="1" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-cancel" onclick="closeAddModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-save">Guardar</button>
+                </div>
             </form>
         </div>
     </div>
