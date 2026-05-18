@@ -125,7 +125,8 @@ function renderTurbos(filter = '') {
     inventory.turbos.forEach((item, index) => {
         if (filter && !item.name.toLowerCase().includes(filter.toLowerCase())) return;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${item.type || '-'}</td><td><strong>${item.id}</strong></td><td>${item.name}</td><td>${item.vehicle || '-'}</td><td>$${item.price.toFixed(2)}</td><td class="${item.stock <= 2 ? 'stock-low' : ''}">${item.stock}</td><td><button onclick="changeStock('turbos', ${index}, -1)">-</button><button onclick="changeStock('turbos', ${index}, 1)">+</button><button style="background:#3b82f6; color:white; border-radius:4px; border:none; padding:2px 5px; margin-left:5px;" onclick="openEditModal('turbos', ${index})">✏️</button></td>`;
+        const safePrice = parseFloat(item.price) || 0;
+        tr.innerHTML = `<td>${item.type || '-'}</td><td><strong>${item.id}</strong></td><td>${item.name}</td><td>${item.vehicle || '-'}</td><td>$${safePrice.toFixed(2)}</td><td class="${item.stock <= 2 ? 'stock-low' : ''}">${item.stock}</td><td><button onclick="changeStock('turbos', ${index}, -1)">-</button><button onclick="changeStock('turbos', ${index}, 1)">+</button><button style="background:#3b82f6; color:white; border-radius:4px; border:none; padding:2px 5px; margin-left:5px;" onclick="openEditModal('turbos', ${index})">✏️</button></td>`;
         tbody.appendChild(tr);
     });
 }
@@ -136,7 +137,8 @@ function renderLubricentro(filter = '') {
     inventory.lubricentro.forEach((item, index) => {
         if (filter && !item.name.toLowerCase().includes(filter.toLowerCase())) return;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${item.type || '-'}</td><td><strong>${item.id}</strong></td><td>${item.name}</td><td>$${item.price.toFixed(2)}</td><td class="${item.stock <= 5 ? 'stock-low' : ''}">${item.stock}</td><td><button onclick="changeStock('lubricentro', ${index}, -1)">-</button><button onclick="changeStock('lubricentro', ${index}, 1)">+</button><button style="background:#3b82f6; color:white; border-radius:4px; border:none; padding:2px 5px; margin-left:5px;" onclick="openEditModal('lubricentro', ${index})">✏️</button></td>`;
+        const safePrice = parseFloat(item.price) || 0;
+        tr.innerHTML = `<td>${item.type || '-'}</td><td><strong>${item.id}</strong></td><td>${item.name}</td><td>$${safePrice.toFixed(2)}</td><td class="${item.stock <= 5 ? 'stock-low' : ''}">${item.stock}</td><td><button onclick="changeStock('lubricentro', ${index}, -1)">-</button><button onclick="changeStock('lubricentro', ${index}, 1)">+</button><button style="background:#3b82f6; color:white; border-radius:4px; border:none; padding:2px 5px; margin-left:5px;" onclick="openEditModal('lubricentro', ${index})">✏️</button></td>`;
         tbody.appendChild(tr);
     });
 }
@@ -150,9 +152,10 @@ function renderSales() {
     sales.sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(s => {
         const tr = document.createElement('tr');
         const d = new Date(s.date).toLocaleString('es-AR', { dateStyle:'short', timeStyle:'short' });
-        tr.innerHTML = `<td>${d}</td><td><strong>${s.name}</strong></td><td>$${s.price.toFixed(2)}</td><td><button style="color:red; border:none; background:none; cursor:pointer;" onclick="deleteSale('${s.id}', '${s.date}')">Anular</button></td>`;
-        if (s.category === 'turbos') { totT += s.price; tT.appendChild(tr); }
-        else { totL += s.price; tL.appendChild(tr); }
+        const safePrice = parseFloat(s.price) || 0;
+        tr.innerHTML = `<td>${d}</td><td><strong>${s.name}</strong></td><td>$${safePrice.toFixed(2)}</td><td><button style="color:red; border:none; background:none; cursor:pointer;" onclick="deleteSale('${s.id}', '${s.date}')">Anular</button></td>`;
+        if (s.category === 'turbos') { totT += safePrice; tT.appendChild(tr); }
+        else { totL += safePrice; tL.appendChild(tr); }
     });
     document.getElementById('total-sales-turbos').innerText = `$${totT.toFixed(2)}`;
     document.getElementById('total-sales-lubricentro').innerText = `$${totL.toFixed(2)}`;
