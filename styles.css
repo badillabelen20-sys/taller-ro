@@ -310,6 +310,10 @@ tr:last-child td {
     display: none;
 }
 
+.hidden {
+    display: none !important;
+}
+
 .modal-content {
     background: var(--background);
     padding: 1.5rem;
