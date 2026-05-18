@@ -9,7 +9,22 @@ let currentUser = null;
 const DEBIT_PERCENT = 1.06;
 const CREDIT_PERCENT = 1.096;
 let wegaData = [];
+let mannData = [];
 let currentSelection = { oil: null, air: null, fuel: null, cabin: null };
+
+function parseMoney(val) {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    let clean = val.toString().replace(/\$/g, '').replace(/\s/g, '');
+    if (clean.includes(',') && clean.includes('.')) {
+        // Point is thousands, comma is decimal (e.g. 67.387,43)
+        clean = clean.replace(/\./g, '').replace(',', '.');
+    } else if (clean.includes(',')) {
+        // Comma is decimal
+        clean = clean.replace(',', '.');
+    }
+    return parseFloat(clean) || 0;
+}
 
 const DEFAULT_VEHICLES = {
     "fiorino_14": { name: "Fiat Fiorino 1.4 Fire Evo", oil_type: "5W30", oil_liters: 2.9, filters: ["WEO-0003", "FAP-9054", "FCI-1660", "AKX-1445"] },
@@ -27,7 +42,10 @@ async function init() {
     setupPOS();
     setupImport();
     setupBudget();
+    setupWegaManualImport();
+    setupMannManualImport();
     loadWegaExcel();
+    loadMannExcel();
     loadFromLocal();
     renderAll();
     try {
@@ -99,7 +117,7 @@ function loadFromLocal() {
     if (sls) sales = JSON.parse(sls);
 }
 
-function renderAll() { renderTurbos(); renderLubricentro(); renderSales(); }
+function renderAll() { renderTurbos(); renderLubricentro(); renderSales(); updateOilSelect(); }
 
 function renderTurbos(filter = '') {
     const tbody = document.querySelector('#table-turbos tbody'); if (!tbody) return;
@@ -221,8 +239,38 @@ function setupPOS() {
             res.forEach(r => {
                 const div = document.createElement('div'); div.className = 'suggestion-item'; div.innerText = r.item.name;
                 div.onclick = () => {
-                    const p = r.item; const c = p.price; const d = c * DEBIT_PERCENT; const cr = c * CREDIT_PERCENT;
-                    document.getElementById('pos-selected-info').innerHTML = `<div class="pos-card"><strong>${p.name}</strong><div class="pos-prices"><div class="price-tag cash"><span>Efectivo</span><span>$${c.toFixed(2)}</span><button onclick="completeSale('${r.cat}', ${r.index}, ${c}, 'Efectivo')">Vender</button></div><div class="price-tag debit"><span>Débito</span><span>$${d.toFixed(2)}</span><button onclick="completeSale('${r.cat}', ${r.index}, ${d}, 'Débito')">Vender</button></div><div class="price-tag credit"><span>Crédito</span><span>$${cr.toFixed(2)}</span><button onclick="completeSale('${r.cat}', ${r.index}, ${cr}, 'Crédito')">Vender</button></div></div></div>`;
+                    const p = r.item; const c = p.price || 0; const d = c * DEBIT_PERCENT; const cr = c * CREDIT_PERCENT;
+                    document.getElementById('pos-selected-info').innerHTML = `
+                        <div class="pos-card">
+                            <div class="pos-header" style="margin-bottom: 12px; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px;">
+                                <strong style="font-size: 1.1rem; color: var(--foreground);">${p.name}</strong>
+                                <span style="font-size: 0.8rem; color: var(--muted-foreground); display: block; margin-top: 2px;">Código: ${p.id}</span>
+                            </div>
+                            
+                            <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                                <label style="font-weight: 600; font-size: 0.9rem; color: var(--foreground);">Precio Base ($):</label>
+                                <input type="number" id="pos-edit-price" value="${c}" style="max-width: 140px; font-weight: bold; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px;" oninput="updatePOSPrices()">
+                            </div>
+                            
+                            <div class="pos-prices">
+                                <div class="price-tag cash">
+                                    <span class="label">Efectivo</span>
+                                    <span class="value" id="pos-price-cash">$${c.toFixed(2)}</span>
+                                    <button class="btn-sell-pos cash" onclick="triggerPOSSale('${r.cat}', ${r.index}, 'Efectivo')">Vender</button>
+                                </div>
+                                <div class="price-tag debit">
+                                    <span class="label">Débito (6%)</span>
+                                    <span class="value" id="pos-price-debit">$${d.toFixed(2)}</span>
+                                    <button class="btn-sell-pos debit" onclick="triggerPOSSale('${r.cat}', ${r.index}, 'Débito')">Vender</button>
+                                </div>
+                                <div class="price-tag credit">
+                                    <span class="label">Crédito (9.6%)</span>
+                                    <span class="value" id="pos-price-credit">$${cr.toFixed(2)}</span>
+                                    <button class="btn-sell-pos credit" onclick="triggerPOSSale('${r.cat}', ${r.index}, 'Crédito')">Vender</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
                     input.value = ''; sugg.classList.add('hidden');
                 };
                 sugg.appendChild(div);
@@ -231,8 +279,38 @@ function setupPOS() {
     };
 }
 
+function updatePOSPrices() {
+    const priceInput = document.getElementById('pos-edit-price');
+    if (!priceInput) return;
+    const price = parseFloat(priceInput.value) || 0;
+    
+    const debitPrice = price * DEBIT_PERCENT;
+    const creditPrice = price * CREDIT_PERCENT;
+    
+    document.getElementById('pos-price-cash').innerText = `$${price.toFixed(2)}`;
+    document.getElementById('pos-price-debit').innerText = `$${debitPrice.toFixed(2)}`;
+    document.getElementById('pos-price-credit').innerText = `$${creditPrice.toFixed(2)}`;
+}
+
+function triggerPOSSale(cat, index, method) {
+    const priceInput = document.getElementById('pos-edit-price');
+    if (!priceInput) return;
+    const price = parseFloat(priceInput.value) || 0;
+    
+    let finalPrice = price;
+    if (method === 'Débito') finalPrice = price * DEBIT_PERCENT;
+    else if (method === 'Crédito') finalPrice = price * CREDIT_PERCENT;
+    
+    completeSale(cat, index, finalPrice, method);
+}
+
 async function completeSale(cat, index, price, method) {
-    const item = inventory[cat][index]; if (item.stock <= 0) return alert("Sin stock");
+    const item = inventory[cat][index];
+    if (item.stock <= 0) {
+        if (!confirm(`El producto "${item.name}" figura con stock 0. ¿Deseas registrar su uso/venta de todas formas?`)) {
+            return;
+        }
+    }
     item.stock--; sales.push({ id: item.id, name: item.name, category: cat, price, date: new Date().toISOString() });
     await saveData(); renderAll(); document.getElementById('pos-selected-info').innerHTML = '<div class="status-badge">✅ Vendido</div>';
 }
@@ -265,11 +343,199 @@ function changeStock(cat, idx, amt) { if (inventory[cat][idx].stock + amt >= 0) 
 async function loadWegaExcel() {
     const status = document.getElementById('wega-status'); if (!status) return;
     try {
-        const res = await fetch('Lista de Precios General (05) - Octubre 2025.xlsx');
-        const data = await res.arrayBuffer(); const wb = XLSX.read(data);
-        wegaData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        status.innerText = "✅ WEGA Lista"; status.style.background = "#dcfce7";
-    } catch (e) { status.innerText = "❌ Error WEGA"; }
+        const res = await fetch('precios_limpios.xlsx');
+        if (!res.ok) throw new Error("No se encontró el archivo");
+        const data = await res.arrayBuffer();
+        processWegaData(data);
+        status.innerText = "✅ Lista Lista"; status.style.background = "#dcfce7";
+    } catch (e) { 
+        status.innerText = "⚠️ Subir Excel"; 
+        status.style.background = "#fef3c7";
+    }
+}
+
+function setupWegaManualImport() {
+    const input = document.getElementById('import-wega-manual');
+    if (input) {
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    processWegaData(event.target.result);
+                    alert("✅ Lista de filtros actualizada correctamente");
+                    document.getElementById('wega-status').innerText = "✅ Lista Lista";
+                    document.getElementById('wega-status').style.background = "#dcfce7";
+                } catch (err) {
+                    alert("Error al procesar el Excel");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
+    }
+}
+
+function processWegaData(data) {
+    const wb = XLSX.read(data);
+    const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+    
+    // Columnas esperadas: Filtros, Codigo, Descripcion, Precio
+    // Mapeo: [0:Filtros, 1:Codigo, 2:Descripcion, 3:Precio]
+    wegaData = raw.slice(1).map(row => {
+        let price = parseFloat(row[3]) || 0;
+        // Lógica: si el precio es bajo (ej: 9.95), multiplicar por 1000 -> 9950
+        if (price > 0 && price < 1000) price = price * 1000;
+        
+        return {
+            category: (row[0] || '').toString().toUpperCase(),
+            code: (row[1] || '').toString().toUpperCase(),
+            desc: (row[2] || '').toString(),
+            price: price
+        };
+    }).filter(item => item.code);
+}
+
+async function loadMannExcel() {
+    const status = document.getElementById('mann-status'); if (!status) return;
+    try {
+        const res = await fetch('precios_mann.xlsx');
+        if (!res.ok) throw new Error("No se encontró el archivo");
+        const data = await res.arrayBuffer();
+        processMannData(data);
+        status.innerText = "✅ Lista Lista"; status.style.background = "#dcfce7";
+    } catch (e) { 
+        status.innerText = "⚠️ Subir Excel"; 
+        status.style.background = "#fef3c7";
+    }
+}
+
+function setupMannManualImport() {
+    const input = document.getElementById('import-mann-manual');
+    if (input) {
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    processMannData(event.target.result);
+                    alert("✅ Lista de filtros MANN actualizada correctamente");
+                    const status = document.getElementById('mann-status');
+                    if (status) {
+                        status.innerText = "✅ Lista Lista";
+                        status.style.background = "#dcfce7";
+                    }
+                } catch (err) {
+                    alert("Error al procesar el Excel de MANN");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
+    }
+}
+
+function processMannData(data) {
+    const wb = XLSX.read(data);
+    let combinedRows = [];
+    
+    // Loop through all sheets in the workbook (Table 1, Table 2, etc.)
+    wb.SheetNames.forEach((sheetName) => {
+        const sheet = wb.Sheets[sheetName];
+        const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        if (!raw || raw.length === 0) return;
+        
+        // Find the header row by looking for "código" and "precio"
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(raw.length, 25); i++) {
+            const row = raw[i];
+            if (row && row.some(cell => cell && cell.toString().toLowerCase().includes('código')) &&
+                row.some(cell => cell && cell.toString().toLowerCase().includes('precio'))) {
+                headerIdx = i;
+                break;
+            }
+        }
+        
+        // Fallback if no header row found with those keywords
+        if (headerIdx === -1) {
+            for (let i = 0; i < Math.min(raw.length, 10); i++) {
+                if (raw[i] && raw[i].length >= 3 && raw[i][0] && raw[i][3]) {
+                    headerIdx = i - 1;
+                    break;
+                }
+            }
+        }
+        
+        if (headerIdx === -1) headerIdx = 0;
+        
+        const heads = (raw[headerIdx] || []).map(h => (h || '').toString().toLowerCase().trim());
+        
+        let col = {
+            code: heads.findIndex(h => h.includes('código') || h.includes('codigo') || h.includes('artículo') || h.includes('articulo')),
+            desc: heads.findIndex(h => h.includes('resumen') || h.includes('aplicación') || h.includes('aplicacion') || h.includes('descripción') || h.includes('descripcion') || h.includes('modelo')),
+            price: heads.findIndex(h => h.includes('precio') || h.includes('sin iva') || h.includes('unit')),
+            class: heads.findIndex(h => h.includes('clasificación') || h.includes('clasificacion') || h.includes('tipo') || h.includes('org'))
+        };
+        
+        if (col.code === -1) col.code = 0;
+        if (col.desc === -1) col.desc = 2;
+        if (col.price === -1) col.price = 3;
+        if (col.class === -1) col.class = 4;
+        
+        const dataRows = raw.slice(headerIdx + 1);
+        dataRows.forEach(row => {
+            let code = (row[col.code] || '').toString().toUpperCase().trim();
+            let desc = (row[col.desc] || '').toString().trim();
+            let price = parseMoney(row[col.price]) || 0;
+            let classification = col.class !== -1 ? (row[col.class] || '').toString().toLowerCase().trim() : '';
+            
+            // Skip rows that are header duplicates or empty
+            if (!code || code === 'CÓDIGO' || code === 'CODIGO' || price === 0) return;
+            
+            // Add 12% markup as requested by the user
+            price = price * 1.12;
+            
+            // Deduce category
+            let category = '';
+            const lowerDesc = desc.toLowerCase();
+            const lowerClass = classification.toLowerCase();
+            
+            if (lowerDesc.includes('aceite') || lowerClass.includes('aceite') || code.startsWith('W ') || code.startsWith('HU') || code.startsWith('WP') || code.startsWith('W8') || code.startsWith('W9') || code.startsWith('W7')) {
+                category = 'OIL';
+            } else if (lowerDesc.includes('aire') || lowerClass.includes('aire') || code.startsWith('C ') || code.startsWith('CF')) {
+                category = 'AIR';
+            } else if (lowerDesc.includes('combustible') || lowerDesc.includes('nafta') || lowerDesc.includes('gasoil') || lowerDesc.includes('diesel') || lowerClass.includes('combustible') || lowerClass.includes('nafta') || lowerClass.includes('gasoil') || lowerClass.includes('diesel') || code.startsWith('WK') || code.startsWith('PU')) {
+                category = 'FUEL';
+            } else if (lowerDesc.includes('habitaculo') || lowerDesc.includes('polen') || lowerDesc.includes('cabina') || lowerClass.includes('habitaculo') || lowerClass.includes('polen') || lowerClass.includes('cabina') || code.startsWith('CU') || code.startsWith('FP')) {
+                category = 'CABIN';
+            }
+            
+            combinedRows.push({
+                category: category,
+                code: code,
+                desc: desc,
+                price: price,
+                brand: 'MANN'
+            });
+        });
+    });
+    
+    mannData = combinedRows;
+}
+
+function updateOilSelect() {
+    const select = document.getElementById('budget-oil-select');
+    if (!select) return;
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">-- Seleccionar Aceite --</option>';
+    
+    inventory.lubricentro.forEach(item => {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.innerText = `${item.name} ($${item.price}/L)`;
+        if (item.id === currentVal) option.selected = true;
+        select.appendChild(option);
+    });
 }
 
 // --- PRESUPUESTO INTERACTIVO ---
@@ -296,6 +562,20 @@ function setupBudget() {
     };
 
     laborInput.oninput = () => calculateBudgetTotal();
+    document.getElementById('budget-oil-liters').oninput = () => calculateBudgetTotal();
+    document.getElementById('budget-oil-select').onchange = () => {
+        const select = document.getElementById('budget-oil-select');
+        const oilId = select.value;
+        const oilProd = inventory.lubricentro.find(i => i.id === oilId);
+        if (oilProd) {
+            currentSelection.oil_price_l = oilProd.price;
+            currentSelection.oil_name = oilProd.name;
+        } else {
+            currentSelection.oil_price_l = 0;
+            currentSelection.oil_name = null;
+        }
+        calculateBudgetTotal();
+    };
     btnWA.onclick = () => copyBudgetToWhatsApp();
     btnSave.onclick = () => saveCurrentVehicleConfig();
 }
@@ -307,23 +587,43 @@ function searchInWega(query) {
     optionsGrid.innerHTML = '';
     
     const categories = {
-        oil: { title: "🛢️ Aceite (WEO/WO)", filters: [] },
-        air: { title: "🌬️ Aire (FAP/WAP)", filters: [] },
-        fuel: { title: "⛽ Combustible (FCI/FCD/FCE)", filters: [] },
-        cabin: { title: "🏠 Habitáculo (AKX)", filters: [] }
+        oil: { title: "🛢️ Aceite (WEO/WO / HU/WP/W)", filters: [] },
+        air: { title: "🌬️ Aire (FAP/WAP / C/CF)", filters: [] },
+        fuel: { title: "⛽ Combustible (FCI/FCD/FCE / WK/PU)", filters: [] },
+        cabin: { title: "🏠 Habitáculo (AKX / CU/FP)", filters: [] }
     };
 
-    wegaData.forEach(row => {
-        const desc = (row[3] || '').toString().toLowerCase();
-        const code = (row[1] || '').toString().toUpperCase();
+    // WEGA search
+    wegaData.forEach(item => {
+        const desc = item.desc.toLowerCase();
+        const code = item.code;
+        const catName = item.category.toLowerCase();
+        
         if (words.every(w => desc.includes(w))) {
             let type = null;
-            if (code.startsWith('WEO') || code.startsWith('WO')) type = 'oil';
-            else if (code.startsWith('FAP') || code.startsWith('WAP')) type = 'air';
-            else if (code.startsWith('FCI') || code.startsWith('FCD') || code.startsWith('FCE')) type = 'fuel';
-            else if (code.startsWith('AKX')) type = 'cabin';
+            if (catName.includes('aceite') || code.startsWith('WEO') || code.startsWith('WO')) type = 'oil';
+            else if (catName.includes('aire') || code.startsWith('FAP') || code.startsWith('WAP')) type = 'air';
+            else if (catName.includes('combustible') || catName.includes('diesel') || catName.includes('inyeccion') || code.startsWith('FCI') || code.startsWith('FCD') || code.startsWith('FCE')) type = 'fuel';
+            else if (catName.includes('habitaculo') || catName.includes('polen') || code.startsWith('AKX')) type = 'cabin';
             
-            if (type) categories[type].filters.push({ code, desc: row[3], price: parseFloat(row[10])||0 });
+            if (type) categories[type].filters.push({ code, desc: item.desc, price: item.price, brand: 'WEGA' });
+        }
+    });
+
+    // MANN search
+    mannData.forEach(item => {
+        const desc = item.desc.toLowerCase();
+        const code = item.code.toUpperCase().trim();
+        const catName = item.category ? item.category.toLowerCase() : '';
+        
+        if (words.every(w => desc.includes(w))) {
+            let type = null;
+            if (catName.includes('oil') || code.startsWith('W ') || code.startsWith('HU') || code.startsWith('WP') || code.startsWith('W8') || code.startsWith('W9') || code.startsWith('W7')) type = 'oil';
+            else if (catName.includes('air') || code.startsWith('C ') || code.startsWith('CF')) type = 'air';
+            else if (catName.includes('fuel') || code.startsWith('WK') || code.startsWith('PU')) type = 'fuel';
+            else if (catName.includes('cabin') || code.startsWith('CU') || code.startsWith('FP')) type = 'cabin';
+            
+            if (type) categories[type].filters.push({ code, desc: item.desc, price: item.price, brand: 'MANN' });
         }
     });
 
@@ -332,12 +632,25 @@ function searchInWega(query) {
         if (cat.filters.length > 0) {
             const header = document.createElement('h5'); header.innerText = cat.title;
             optionsGrid.appendChild(header);
-            cat.filters.slice(0, 5).forEach(f => {
+            
+            cat.filters.slice(0, 6).forEach((f, idx) => {
                 const item = document.createElement('div');
                 item.className = 'option-item';
-                item.innerHTML = `<strong>${f.code}</strong><small>${f.desc}</small>`;
+                const brandColor = f.brand === 'MANN' ? '#15803d' : '#1e3a8a';
+                const brandText = f.brand === 'MANN' ? 'MANN' : 'WEGA';
+                
+                item.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong>${f.code}</strong>
+                        <span style="background:${brandColor}; color:white; font-size:0.7rem; font-weight:bold; padding:2px 6px; border-radius:4px;">${brandText}</span>
+                    </div>
+                    <small>${f.desc}</small>
+                    <div style="color:var(--primary); font-weight:bold;">$${(f.price * 1.6).toFixed(0)}</div>
+                `;
                 item.onclick = () => selectFilter(type, f);
                 optionsGrid.appendChild(item);
+                
+                if (idx === 0 && !currentSelection[type]) selectFilter(type, f);
             });
         }
     });
@@ -347,15 +660,13 @@ function searchInWega(query) {
 
 function selectFilter(type, filter) {
     currentSelection[type] = filter;
-    document.getElementById(`sel-${type}`).innerText = filter.code;
+    document.getElementById(`sel-${type}`).innerText = `[${filter.brand}] ${filter.code}`;
     
-    // Si seleccionamos aceite, sugerir litros según el nombre del auto
     if (type === 'oil') {
         const q = document.getElementById('budget-search').value.toLowerCase();
         const isHeavy = ['hilux','ranger','frontier','amarok','s10','toro'].some(m => q.includes(m));
         currentSelection.oil_liters = isHeavy ? 8 : 4;
         
-        // Buscar aceite en inventario para el precio
         const oilProd = inventory.lubricentro.find(o => o.name.toLowerCase().includes('5w30') || o.name.toLowerCase().includes('10w40'));
         if (oilProd) {
             currentSelection.oil_price_l = oilProd.price;
@@ -367,19 +678,22 @@ function selectFilter(type, filter) {
 }
 
 function loadVehicleConfig(v) {
-    // v = { name, oil_type, oil_liters, filters: [oil, air, fuel, cabin] }
     document.getElementById('budget-search').value = v.name;
     
-    // Mapear filtros de la base de datos
     v.filters.forEach(code => {
-        // Buscar el precio actual en el Excel
-        const row = wegaData.find(r => (r[1]||'').toString().toUpperCase() === code.toUpperCase());
-        const filterObj = { code, desc: row ? row[3] : 'Filtro Guardado', price: row ? parseFloat(row[10])||0 : 0 };
+        let item = wegaData.find(r => r.code === code.toUpperCase());
+        let brand = 'WEGA';
+        if (!item) {
+            item = mannData.find(r => r.code === code.toUpperCase());
+            brand = 'MANN';
+        }
         
-        if (code.startsWith('WEO') || code.startsWith('WO')) selectFilter('oil', filterObj);
-        else if (code.startsWith('FAP') || code.startsWith('WAP')) selectFilter('air', filterObj);
-        else if (code.startsWith('FCI') || code.startsWith('FCD') || code.startsWith('FCE')) selectFilter('fuel', filterObj);
-        else if (code.startsWith('AKX')) selectFilter('cabin', filterObj);
+        const filterObj = { code, desc: item ? item.desc : 'Filtro Guardado', price: item ? item.price : 0, brand };
+        
+        if (code.startsWith('WEO') || code.startsWith('WO') || code.startsWith('W ') || code.startsWith('HU') || code.startsWith('WP') || code.startsWith('W7') || code.startsWith('W8') || code.startsWith('W9')) selectFilter('oil', filterObj);
+        else if (code.startsWith('FAP') || code.startsWith('WAP') || code.startsWith('C ') || code.startsWith('CF')) selectFilter('air', filterObj);
+        else if (code.startsWith('FCI') || code.startsWith('FCD') || code.startsWith('FCE') || code.startsWith('WK') || code.startsWith('PU')) selectFilter('fuel', filterObj);
+        else if (code.startsWith('AKX') || code.startsWith('CU') || code.startsWith('FP')) selectFilter('cabin', filterObj);
     });
 
     if (v.oil_liters) currentSelection.oil_liters = v.oil_liters;
@@ -393,29 +707,30 @@ function calculateBudgetTotal() {
     
     itemsDiv.innerHTML = '';
     let total = 0;
-
+    
     Object.keys(currentSelection).forEach(type => {
         const f = currentSelection[type];
         if (f && type !== 'oil_liters' && type !== 'oil_price_l' && type !== 'oil_name') {
             const price = f.price * 1.6;
             total += price;
-            itemsDiv.innerHTML += `<p><span>${type.toUpperCase()} (${f.code})</span> <span>$${price.toFixed(2)}</span></p>`;
+            itemsDiv.innerHTML += `<p><span>[${f.brand}] ${type.toUpperCase()} (${f.code})</span> <span>$${price.toFixed(0)}</span></p>`;
         }
     });
 
-    if (currentSelection.oil_liters && currentSelection.oil_price_l) {
-        const cost = currentSelection.oil_price_l * currentSelection.oil_liters;
+    const oilLiters = parseFloat(document.getElementById('budget-oil-liters').value) || 0;
+    if (currentSelection.oil_price_l && oilLiters > 0) {
+        const cost = currentSelection.oil_price_l * oilLiters;
         total += cost;
-        itemsDiv.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${currentSelection.oil_liters}L)</span> <span>$${cost.toFixed(2)}</span></p>`;
+        itemsDiv.innerHTML += `<p><span>Aceite (${currentSelection.oil_name} x${oilLiters}L)</span> <span>$${cost.toFixed(0)}</span></p>`;
     }
 
     const labor = parseFloat(document.getElementById('budget-labor').value) || 0;
     if (labor > 0) {
         total += labor;
-        itemsDiv.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(2)}</span></p>`;
+        itemsDiv.innerHTML += `<p><span>Mano de Obra</span> <span>$${labor.toFixed(0)}</span></p>`;
     }
 
-    totalDiv.innerHTML = `<h3>Total: $${total.toFixed(2)}</h3>`;
+    totalDiv.innerHTML = `<h3>Total: $${total.toFixed(0)}</h3>`;
     resultCard.classList.remove('hidden');
 }
 
