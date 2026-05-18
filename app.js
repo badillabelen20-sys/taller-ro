@@ -35,6 +35,14 @@ let VEHICLE_DB = { ...DEFAULT_VEHICLES };
 let editingIndex = null;
 
 async function init() {
+    // 1. Inicializar Supabase inmediatamente para evitar que sea null
+    try {
+        if (typeof supabase !== 'undefined') {
+            client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        }
+    } catch (e) { console.warn("Supabase init error:", e); }
+
+    // 2. Configurar componentes básicos
     setupTabs();
     setupAuth();
     setupSearch();
@@ -44,13 +52,18 @@ async function init() {
     setupBudget();
     setupWegaManualImport();
     setupMannManualImport();
-    loadWegaExcel();
-    loadMannExcel();
-    loadFromLocal();
-    renderAll();
-    try {
-        if (typeof supabase !== 'undefined') {
-            client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    
+    // 3. Cargar archivos y almacenamiento local de forma segura
+    try { loadWegaExcel(); } catch (e) { console.warn(e); }
+    try { loadMannExcel(); } catch (e) { console.warn(e); }
+    try { loadFromLocal(); } catch (e) { console.warn(e); }
+    
+    // 4. Renderizar pantalla inicial
+    try { renderAll(); } catch (e) { console.warn(e); }
+
+    // 5. Revisar si hay una sesión activa de Supabase
+    if (client) {
+        try {
             const { data } = await client.auth.getSession();
             if (data?.session) {
                 currentUser = data.session.user;
@@ -58,23 +71,39 @@ async function init() {
                 await loadFromCloud();
                 await loadCustomVehicles();
             }
-        }
-    } catch (e) { console.warn("Init error:", e); }
+        } catch (e) { console.warn("Session check error:", e); }
+    }
 }
 
 function setupAuth() {
     const form = document.getElementById('login-form');
+    if (!form) return;
     form.onsubmit = async (e) => {
         e.preventDefault();
         const email = document.getElementById('login-email').value;
         const password = document.getElementById('login-password').value;
+        
+        // Evitar error de "properties of null (reading 'auth')" si el CDN falló o fue bloqueado
+        if (!client) {
+            alert("⚠️ No se pudo establecer conexión con el servidor de base de datos.\n\nPor favor:\n1. Asegúrate de estar conectado a internet.\n2. Desactiva bloqueadores de publicidad muy estrictos (como el escudo de Brave Browser o uBlock Origin).\n3. Recarga la página y vuelve a intentar.");
+            return;
+        }
+        
         try {
             const { data, error } = await client.auth.signInWithPassword({ email, password });
             if (error) alert("Error: " + error.message);
-            else { currentUser = data.user; document.getElementById('login-screen').classList.add('hidden'); await loadFromCloud(); await loadCustomVehicles(); }
+            else { 
+                currentUser = data.user; 
+                document.getElementById('login-screen').classList.add('hidden'); 
+                await loadFromCloud(); 
+                await loadCustomVehicles(); 
+            }
         } catch (err) { alert("Error: " + err.message); }
     };
-    document.getElementById('logout-btn').onclick = async () => { if (client) await client.auth.signOut(); location.reload(); };
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.onclick = async () => { if (client) await client.auth.signOut(); location.reload(); };
+    }
 }
 
 async function loadFromCloud() {
@@ -111,10 +140,14 @@ async function saveData() {
 }
 
 function loadFromLocal() {
-    const inv = localStorage.getItem('taller_inventory');
-    const sls = localStorage.getItem('taller_sales');
-    if (inv) inventory = JSON.parse(inv);
-    if (sls) sales = JSON.parse(sls);
+    try {
+        const inv = localStorage.getItem('taller_inventory');
+        const sls = localStorage.getItem('taller_sales');
+        if (inv) inventory = JSON.parse(inv);
+        if (sls) sales = JSON.parse(sls);
+    } catch (e) {
+        console.warn("Local storage parse error:", e);
+    }
 }
 
 function renderAll() { renderTurbos(); renderLubricentro(); renderSales(); updateOilSelect(); }
