@@ -114,7 +114,22 @@ async function loadFromCloud() {
         if (inv) {
             inventory.turbos = inv.filter(i => i.category === 'turbos');
             inventory.lubricentro = inv.filter(i => i.category === 'lubricentro');
-            sales = sls || [];
+            
+            // Limpiar duplicados de ventas automáticamente
+            const uniqueSales = [];
+            const seenSales = new Set();
+            (sls || []).forEach(s => {
+                const key = `${s.name}_${s.price}_${s.date}`;
+                if (!seenSales.has(key)) {
+                    seenSales.add(key);
+                    uniqueSales.push(s);
+                } else if (client && s.id) {
+                    // Borrar duplicado de la nube silenciosamente
+                    client.from('ventas_taller_ro').delete().eq('id', s.id).then();
+                }
+            });
+            sales = uniqueSales;
+            
             renderAll();
         }
     } catch (e) { console.error(e); }
@@ -128,7 +143,7 @@ async function syncWithCloud(manual = false) {
         if (all.length > 0) {
             for (let i = 0; i < all.length; i += 500) await client.from('datos_taller_ro').insert(all.slice(i, i + 500));
         }
-        if (sales.length > 0) await client.from('ventas_taller_ro').upsert(sales.map(s => ({ item_id: s.id, name: s.name, category: s.category, price: s.price, date: s.date })));
+        // Ya no sincronizamos todas las ventas aquí para evitar duplicados. Se insertan individualmente en completeSale.
         if (manual) alert("✅ Nube sincronizada");
     } catch (e) { console.error(e); }
 }
@@ -347,18 +362,39 @@ async function completeSale(cat, index, price, method) {
             return;
         }
     }
-    item.stock--; sales.push({ id: item.id, name: item.name, category: cat, price, date: new Date().toISOString() });
-    await saveData(); renderAll(); document.getElementById('pos-selected-info').innerHTML = '<div class="status-badge">✅ Vendido</div>';
+    item.stock--; 
+    const newSale = { item_id: item.id, name: item.name, category: cat, price, date: new Date().toISOString() };
+    
+    if (client) {
+        const { data } = await client.from('ventas_taller_ro').insert([newSale]).select();
+        if (data && data.length > 0) sales.push(data[0]);
+        else sales.push(newSale);
+    } else {
+        sales.push(newSale);
+    }
+    
+    await saveData(); 
+    renderAll(); 
+    document.getElementById('pos-selected-info').innerHTML = '<div class="status-badge">✅ Vendido</div>';
 }
 
 async function deleteSale(id, date) {
-    if (!confirm("Anular?")) return;
+    if (!confirm("¿Anular esta venta?")) return;
     const idx = sales.findIndex(s => s.id === id && s.date === date);
     if (idx > -1) {
-        const s = sales[idx]; const item = inventory[s.category].find(i => i.id === s.id);
+        const s = sales[idx]; 
+        const productCode = s.item_id || s.id;
+        const item = inventory[s.category].find(i => i.id === productCode);
         if (item) item.stock++;
-        if (client) await client.from('ventas_taller_ro').delete().eq('item_id', id).eq('date', date);
-        sales.splice(idx, 1); await saveData(); renderAll();
+        
+        if (client) {
+            if (s.id) await client.from('ventas_taller_ro').delete().eq('id', s.id);
+            else await client.from('ventas_taller_ro').delete().eq('item_id', productCode).eq('date', date);
+        }
+        
+        sales.splice(idx, 1); 
+        await saveData(); 
+        renderAll();
     }
 }
 
