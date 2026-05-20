@@ -52,6 +52,7 @@ async function init() {
     setupBudget();
     setupWegaManualImport();
     setupMannManualImport();
+    setupServiceModal();
     
     // 3. Cargar archivos y almacenamiento local de forma segura
     try { loadWegaExcel(); } catch (e) { console.warn(e); }

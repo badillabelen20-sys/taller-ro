@@ -155,8 +155,9 @@
         <section id="ventas-lubricentro" class="tab-content">
             <div class="tab-header">
                 <h2>Libro Diario: Lubricentro</h2>
-                <div class="sales-summary">
+                <div class="sales-summary" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
                     <span style="font-size: 1.1rem; color: var(--primary-red);">Total Lubricentro: <strong id="total-sales-lubricentro">$0.00</strong></span>
+                    <button class="btn btn-add" onclick="openServiceModal()" style="font-size: 0.85rem; padding: 6px 12px; height: auto;">➕ Registrar Service Manual</button>
                 </div>
             </div>
             <div class="table-container">
@@ -315,6 +316,31 @@
                 <div class="modal-actions">
                     <button type="button" class="btn btn-cancel" onclick="closeAddModal()">Cancelar</button>
                     <button type="submit" class="btn btn-save">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para Registrar Service Manual -->
+    <div id="service-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>⚙️ Registrar Service Manual</h2>
+            <form id="service-form">
+                <div class="form-group">
+                    <label>Vehículo (Ej: Toyota Hilux 2.8)</label>
+                    <input type="text" id="service-vehicle" required>
+                </div>
+                <div class="form-group">
+                    <label>Monto Total Cobrado ($)</label>
+                    <input type="number" id="service-price" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Notas Adicionales (Opcional)</label>
+                    <input type="text" id="service-notes" placeholder="Ej: Cambio de aceite, filtros, etc.">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-cancel" onclick="closeServiceModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-save">Guardar Service</button>
                 </div>
             </form>
         </div>
