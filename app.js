@@ -298,9 +298,15 @@ function setupPOS() {
                                 <span style="font-size: 0.8rem; color: var(--muted-foreground); display: block; margin-top: 2px;">Código: ${p.id}</span>
                             </div>
                             
-                            <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
-                                <label style="font-weight: 600; font-size: 0.9rem; color: var(--foreground);">Precio Base ($):</label>
-                                <input type="number" id="pos-edit-price" value="${c}" style="max-width: 140px; font-weight: bold; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px;" oninput="updatePOSPrices()">
+                            <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                <div>
+                                    <label style="font-weight: 600; font-size: 0.9rem; color: var(--foreground);">Cant:</label>
+                                    <input type="number" id="pos-edit-qty" value="1" min="1" style="max-width: 60px; font-weight: bold; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px;" oninput="updatePOSPrices()">
+                                </div>
+                                <div>
+                                    <label style="font-weight: 600; font-size: 0.9rem; color: var(--foreground);">Precio c/u ($):</label>
+                                    <input type="number" id="pos-edit-price" value="${c}" style="max-width: 100px; font-weight: bold; border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px;" oninput="updatePOSPrices()">
+                                </div>
                             </div>
                             
                             <div class="pos-prices">
@@ -332,38 +338,48 @@ function setupPOS() {
 
 function updatePOSPrices() {
     const priceInput = document.getElementById('pos-edit-price');
-    if (!priceInput) return;
+    const qtyInput = document.getElementById('pos-edit-qty');
+    if (!priceInput || !qtyInput) return;
+    
     const price = parseFloat(priceInput.value) || 0;
+    const qty = parseInt(qtyInput.value) || 1;
+    const totalBase = price * qty;
     
-    const debitPrice = price * DEBIT_PERCENT;
-    const creditPrice = price * CREDIT_PERCENT;
+    const debitPrice = totalBase * DEBIT_PERCENT;
+    const creditPrice = totalBase * CREDIT_PERCENT;
     
-    document.getElementById('pos-price-cash').innerText = `$${price.toFixed(2)}`;
+    document.getElementById('pos-price-cash').innerText = `$${totalBase.toFixed(2)}`;
     document.getElementById('pos-price-debit').innerText = `$${debitPrice.toFixed(2)}`;
     document.getElementById('pos-price-credit').innerText = `$${creditPrice.toFixed(2)}`;
 }
 
 function triggerPOSSale(cat, index, method) {
     const priceInput = document.getElementById('pos-edit-price');
-    if (!priceInput) return;
+    const qtyInput = document.getElementById('pos-edit-qty');
+    if (!priceInput || !qtyInput) return;
+    
     const price = parseFloat(priceInput.value) || 0;
+    const qty = parseInt(qtyInput.value) || 1;
+    const totalBase = price * qty;
     
-    let finalPrice = price;
-    if (method === 'Débito') finalPrice = price * DEBIT_PERCENT;
-    else if (method === 'Crédito') finalPrice = price * CREDIT_PERCENT;
+    let finalPrice = totalBase;
+    if (method === 'Débito') finalPrice = totalBase * DEBIT_PERCENT;
+    else if (method === 'Crédito') finalPrice = totalBase * CREDIT_PERCENT;
     
-    completeSale(cat, index, finalPrice, method);
+    completeSale(cat, index, finalPrice, method, qty);
 }
 
-async function completeSale(cat, index, price, method) {
+async function completeSale(cat, index, price, method, qty = 1) {
     const item = inventory[cat][index];
-    if (item.stock <= 0) {
-        if (!confirm(`El producto "${item.name}" figura con stock 0. ¿Deseas registrar su uso/venta de todas formas?`)) {
+    if (item.stock < qty) {
+        if (!confirm(`El producto "${item.name}" tiene stock insuficiente (quedan ${item.stock}). ¿Deseas registrar la venta de ${qty} unidades de todas formas?`)) {
             return;
         }
     }
-    item.stock--; 
-    const newSale = { item_id: item.id, name: item.name, category: cat, price, date: new Date().toISOString() };
+    item.stock -= qty; 
+    
+    const saleName = qty > 1 ? `${item.name} (x${qty})` : item.name;
+    const newSale = { item_id: item.id, name: saleName, category: cat, price, date: new Date().toISOString() };
     
     if (client) {
         const { data } = await client.from('ventas_taller_ro').insert([newSale]).select();
@@ -385,7 +401,12 @@ async function deleteSale(id, date) {
         const s = sales[idx]; 
         const productCode = s.item_id || s.id;
         const item = inventory[s.category].find(i => i.id === productCode);
-        if (item) item.stock++;
+        
+        let qtyToReturn = 1;
+        const match = s.name.match(/\(x(\d+)\)$/);
+        if (match) qtyToReturn = parseInt(match[1], 10);
+        
+        if (item) item.stock += qtyToReturn;
         
         if (client) {
             if (s.id) await client.from('ventas_taller_ro').delete().eq('id', s.id);
